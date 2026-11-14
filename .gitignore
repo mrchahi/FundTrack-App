@@ -1,0 +1,30 @@
+# --- Python ---
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+*.spec
+packaging/build/
+
+# --- Node / Frontend ---
+node_modules/
+web/node_modules/
+web/dist/
+
+# --- Local user data (kept outside the repo) ---
+**/*.sqlite3
+**/*.sqlite
+**/*.db
+**/events.jsonl
+.env
+.env.*
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
