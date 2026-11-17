@@ -1,0 +1,6 @@
+{
+  "name": "FundTrack",
+  "description": "Smart MT5 Trading Journal, Personal Accounting & Gamified Goal Engine",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
