@@ -172,12 +172,23 @@ export function buildUnifiedNotificationFeed(state: FundTrackState): UnifiedFeed
       }
     });
 
-  // 4. Upcoming Economic News
+  // 4. Today's Economic News ONLY (filtered to same local calendar day)
+  const nowDate = new Date(nowMs);
+  const isSameLocalDay = (d: Date) =>
+    !Number.isNaN(d.getTime()) &&
+    d.getFullYear() === nowDate.getFullYear() &&
+    d.getMonth() === nowDate.getMonth() &&
+    d.getDate() === nowDate.getDate();
+
+  const leadMinutes = Math.max(1, state.settings.newsAlertLeadMinutes ?? 15);
   const coveredNewsIds = new Set<string>();
   state.economicEvents
     .filter((ev) => {
-      const evMs = new Date(ev.timestamp).getTime();
-      return evMs >= nowMs - 2 * 3600 * 1000 && evMs <= nowMs + 48 * 3600 * 1000;
+      const evDate = new Date(ev.timestamp);
+      const evMs = evDate.getTime();
+      if (!isSameLocalDay(evDate)) return false;
+      // Keep today's upcoming events and events released up to 60 minutes ago
+      return evMs >= nowMs - 60 * 60 * 1000;
     })
     .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
     .forEach((ev) => {
@@ -185,7 +196,8 @@ export function buildUnifiedNotificationFeed(state: FundTrackState): UnifiedFeed
       const id = `live_news_${ev.id}`;
       if (dismissedSet.has(id)) return;
       const evMs = new Date(ev.timestamp).getTime();
-      const isImminent = evMs >= nowMs && evMs - nowMs <= 4 * 3600 * 1000;
+      const minsUntil = (evMs - nowMs) / 60000;
+      const withinLeadWindow = minsUntil <= leadMinutes && minsUntil >= -5;
       const impactText =
         ev.impact === 'high'
           ? t(lang, 'اثر بالا', 'High Impact')
@@ -203,10 +215,14 @@ export function buildUnifiedNotificationFeed(state: FundTrackState): UnifiedFeed
           'Prev:'
         )} ${ev.previous}`,
         metaLeft: `${ev.currency} · ${impactText}${
-          ev.alarmEnabled ? ` · ${t(lang, 'زنگ فعال', 'Alarm On')}` : ''
+          withinLeadWindow
+            ? ` · ${t(lang, `هشدار ${leadMinutes} دقیقه‌ای`, `${leadMinutes}m Alert`)}`
+            : ev.alarmEnabled
+            ? ` · ${t(lang, `زنگ ${leadMinutes}د قبل`, `${leadMinutes}m Alarm`)}`
+            : ''
         }`,
         metaRight: formatCountdown(ev.timestamp, lang),
-        tone: ev.impact === 'high' || isImminent ? 'danger' : 'warning',
+        tone: withinLeadWindow || ev.impact === 'high' ? 'danger' : 'warning',
         unread: !readSet.has(id),
         navigateTo: { cat: 'trading', sub: 'calendar' },
         actionLabel: t(lang, 'تقویم اخبار', 'News Calendar'),
@@ -214,9 +230,10 @@ export function buildUnifiedNotificationFeed(state: FundTrackState): UnifiedFeed
       });
     });
 
-  // 5. Persisted Notification History
+  // 5. Persisted Notification History (restrict persisted news alerts to today only)
   state.notifications.forEach((n) => {
     if (dismissedSet.has(n.id)) return;
+    if (n.source === 'news' && !isSameLocalDay(new Date(n.createdAt))) return;
     if (n.source === 'loan' && n.targetId && coveredLoanIds.has(n.targetId) && n.read) return;
     if (n.source === 'fixed_expense' && n.targetId && coveredFixedIds.has(n.targetId) && n.read) return;
     if (n.source === 'news' && n.targetId && coveredNewsIds.has(n.targetId) && n.read) return;
@@ -239,7 +256,7 @@ export function buildUnifiedNotificationFeed(state: FundTrackState): UnifiedFeed
         ? t(lang, 'بدهی اشخاص', 'Personal Debt')
         : n.source === 'fixed_expense'
         ? t(lang, 'هزینه ثابت', 'Fixed Bill')
-        : t(lang, 'خبر اقتصادی', 'Economic News');
+        : t(lang, 'خبر اقتصادی امروز', "Today's News");
 
     const isUnread = !n.read && !readSet.has(n.id);
     const tone: UnifiedFeedEntry['tone'] =
@@ -290,6 +307,9 @@ export function buildUnifiedNotificationFeed(state: FundTrackState): UnifiedFeed
 
   return entries.sort((a, b) => {
     if (a.unread !== b.unread) return a.unread ? -1 : 1;
+    if (a.category === 'news' && b.category === 'news') {
+      return a.timestampMs - b.timestampMs;
+    }
     return b.timestampMs - a.timestampMs;
   });
 }

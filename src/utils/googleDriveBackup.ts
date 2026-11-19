@@ -228,10 +228,11 @@ export async function listDriveBackups(accessToken: string): Promise<DriveBackup
 
 export async function uploadDriveBackup(
   accessToken: string,
-  state: FundTrackState
+  state: FundTrackState,
+  customEnvelope?: unknown
 ): Promise<DriveBackupFile> {
   const folderId = await ensureBackupFolder(accessToken);
-  const envelope = createBackupEnvelope(state);
+  const envelope = customEnvelope ?? createBackupEnvelope(state);
   const stamp = new Date().toISOString().slice(0, 16).replace('T', '_').replace(/:/g, '-');
   const fileName = `fundtrack-backup-${stamp}.json`;
 
@@ -266,16 +267,87 @@ export async function uploadDriveBackup(
   return (await res.json()) as DriveBackupFile;
 }
 
-export async function downloadDriveBackup(
+export async function downloadDriveBackupRaw(
   accessToken: string,
   fileId: string
-): Promise<ReturnType<typeof parseAndValidateBackup>> {
+): Promise<unknown> {
   const res = await driveFetch(
     `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`,
     accessToken
   );
-  const json = await res.json();
+  return await res.json();
+}
+
+export async function downloadDriveBackup(
+  accessToken: string,
+  fileId: string
+): Promise<ReturnType<typeof parseAndValidateBackup>> {
+  const json = await downloadDriveBackupRaw(accessToken, fileId);
   return parseAndValidateBackup(json);
+}
+
+export async function uploadDriveSyncSnapshot(
+  accessToken: string,
+  payload: unknown
+): Promise<DriveBackupFile> {
+  const folderId = await ensureBackupFolder(accessToken);
+  const q = encodeURIComponent(
+    `'${folderId}' in parents and name = 'fundtrack-sync-latest.json' and trashed = false`
+  );
+  const existingRes = await driveFetch(
+    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=2`,
+    accessToken
+  );
+  const existingJson = (await existingRes.json()) as { files?: Array<{ id: string }> };
+  const existingId = existingJson.files?.[0]?.id;
+
+  const boundary = '-------FundTrackSyncBoundary' + Math.random().toString(36).slice(2);
+  const metadata = existingId
+    ? { name: 'fundtrack-sync-latest.json', mimeType: 'application/json' }
+    : { name: 'fundtrack-sync-latest.json', parents: [folderId], mimeType: 'application/json' };
+  const body =
+    `--${boundary}\r\n` +
+    `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
+    `${JSON.stringify(metadata)}\r\n` +
+    `--${boundary}\r\n` +
+    `Content-Type: application/json\r\n\r\n` +
+    `${JSON.stringify(payload)}\r\n` +
+    `--${boundary}--`;
+
+  const uploadUrl = existingId
+    ? `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(existingId)}?uploadType=multipart&fields=id,name,size,modifiedTime`
+    : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,size,modifiedTime';
+
+  const res = await driveFetch(uploadUrl, accessToken, {
+    method: existingId ? 'PATCH' : 'POST',
+    headers: {
+      'Content-Type': `multipart/related; boundary="${boundary}"`,
+    },
+    body,
+  });
+
+  return (await res.json()) as DriveBackupFile;
+}
+
+export async function fetchLatestDriveSyncSnapshot(
+  accessToken: string
+): Promise<{ file: DriveBackupFile; rawJson: unknown } | null> {
+  const qSync = encodeURIComponent(
+    "mimeType != 'application/vnd.google-apps.folder' and name = 'fundtrack-sync-latest.json' and trashed = false"
+  );
+  const syncRes = await driveFetch(
+    `https://www.googleapis.com/drive/v3/files?q=${qSync}&orderBy=modifiedTime desc&fields=files(id,name,size,modifiedTime)&pageSize=1`,
+    accessToken
+  );
+  const syncData = (await syncRes.json()) as { files?: DriveBackupFile[] };
+  let targetFile = syncData.files?.[0];
+  if (!targetFile) {
+    const backups = await listDriveBackups(accessToken);
+    targetFile = backups[0];
+  }
+  if (!targetFile) return null;
+  const rawJson = await downloadDriveBackupRaw(accessToken, targetFile.id);
+  return { file: targetFile, rawJson };
 }
 
 export async function deleteDriveBackup(accessToken: string, fileId: string): Promise<void> {

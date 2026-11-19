@@ -33,6 +33,7 @@ import {
   resolveActiveModelProfile,
   testAssistantProfileConnection,
 } from '../utils/assistantCopilot';
+import { hashPin, verifyPin } from '../utils/security';
 import { t } from '../i18n/translations';
 import { GlassSelect, GlassSwitch } from './GlassControls';
 import { MaterialInput } from './MaterialInputs';
@@ -47,7 +48,7 @@ interface SystemViewProps {
   onRefreshSystem: () => void;
   onResetDemoData: () => void;
   onWipeAllData: () => void;
-  onRestoreState: (restored: FundTrackState, target: 'local' | 'gdrive') => void;
+  onRestoreState: (restored: FundTrackState, target: 'local' | 'gdrive' | 'lan') => void;
   onSyncEaFile?: () => Promise<void> | void;
   onShowToast: (msg: string, tone?: 'success' | 'error' | 'info') => void;
 }
@@ -94,9 +95,24 @@ export const SystemView: React.FC<SystemViewProps> = ({
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [currentPinCheck, setCurrentPinCheck] = useState('');
+  const [currentPinValid, setCurrentPinValid] = useState<boolean | null>(null);
   const [aiTestingId, setAiTestingId] = useState<string | null>(null);
   const [aiModels, setAiModels] = useState<string[]>([]);
   const [aiStatusMap, setAiStatusMap] = useState<Record<string, { ok: boolean; msg: string }>>({});
+
+  React.useEffect(() => {
+    if (!s.pinEnabled || currentPinCheck.length < 4) {
+      setCurrentPinValid(null);
+      return;
+    }
+    let cancelled = false;
+    void verifyPin(currentPinCheck, s.pinHash, s.pinCode).then((ok) => {
+      if (!cancelled) setCurrentPinValid(ok);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [s.pinEnabled, s.pinHash, s.pinCode, currentPinCheck]);
 
   // New Profile Form state
   const [showAddProfile, setShowAddProfile] = useState(false);
@@ -265,11 +281,14 @@ export const SystemView: React.FC<SystemViewProps> = ({
     e.target.value = '';
   };
 
-  const handleSetPin = (e: React.FormEvent) => {
+  const handleSetPin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (s.pinEnabled && currentPinCheck !== s.pinCode) {
-      onShowToast(t(lang, 'رمز PIN فعلی اشتباه است', 'Current PIN is incorrect'), 'error');
-      return;
+    if (s.pinEnabled) {
+      const ok = await verifyPin(currentPinCheck, s.pinHash, s.pinCode);
+      if (!ok) {
+        onShowToast(t(lang, 'رمز PIN فعلی اشتباه است', 'Current PIN is incorrect'), 'error');
+        return;
+      }
     }
     if (newPin.length < 4 || !/^\d+$/.test(newPin)) {
       onShowToast(t(lang, 'رمز PIN باید حداقل ۴ رقم عددی باشد', 'PIN must be at least 4 digits'), 'error');
@@ -279,41 +298,45 @@ export const SystemView: React.FC<SystemViewProps> = ({
       onShowToast(t(lang, 'تکرار رمز PIN مطابقت ندارد', 'PIN confirmation does not match'), 'error');
       return;
     }
-    onUpdateSettings({ pinEnabled: true, pinCode: newPin });
+    const hashed = await hashPin(newPin);
+    onUpdateSettings({ pinEnabled: true, pinCode: '', pinHash: hashed });
     setNewPin('');
     setConfirmPin('');
     setCurrentPinCheck('');
-    onShowToast(t(lang, 'رمز PIN با موفقیت ذخیره شد', 'Security PIN saved'), 'success');
+    setCurrentPinValid(null);
+    onShowToast(t(lang, 'رمز PIN به‌صورت رمزنگاری‌شده ذخیره شد', 'Security PIN hashed & saved'), 'success');
   };
 
-  const handleDisablePin = () => {
-    if (currentPinCheck !== s.pinCode) {
+  const handleDisablePin = async () => {
+    const ok = await verifyPin(currentPinCheck, s.pinHash, s.pinCode);
+    if (!ok) {
       onShowToast(t(lang, 'برای غیرفعال‌سازی، رمز PIN فعلی را صحیح وارد کنید', 'Enter current PIN to disable'), 'error');
       return;
     }
-    onUpdateSettings({ pinEnabled: false, pinCode: '' });
+    onUpdateSettings({ pinEnabled: false, pinCode: '', pinHash: undefined });
     setCurrentPinCheck('');
+    setCurrentPinValid(null);
     onShowToast(t(lang, 'قفل PIN غیرفعال شد', 'PIN lock disabled'), 'info');
   };
 
   return (
-    <div className="space-y-6">
-      {/* Sub-navigation */}
-      <div className="inline-flex flex-wrap items-center gap-1 p-1.5 rounded-2xl glass-surface">
+    <div className="space-y-4 sm:space-y-6">
+      {/* Material Design 3 Sub-navigation */}
+      <div className="inline-flex items-center gap-1 p-1 rounded-2xl glass-surface overflow-x-auto no-scrollbar max-w-full flex-nowrap">
         {(
           [
-            ['appearance', t(lang, 'ظاهر و تم', 'Appearance')],
-            ['ai', t(lang, 'دستیار هوشمند (Jan)', 'Local AI (Jan)')],
-            ['security', t(lang, 'امنیت و قفل', 'Security')],
-            ['backup', t(lang, 'پشتیبان و نصب', 'Backup & Install')],
-            ['health', t(lang, 'سلامت سیستم', 'System Health')],
+            ['appearance', t(lang, 'ظاهر', 'Theme')],
+            ['ai', t(lang, 'هوش مصنوعی', 'AI')],
+            ['security', t(lang, 'امنیت', 'Security')],
+            ['backup', t(lang, 'بکاپ و نصب', 'Backup')],
+            ['health', t(lang, 'سلامت', 'Health')],
           ] as Array<[SystemSubTab, string]>
         ).map(([id, label]) => (
           <button
             key={id}
             type="button"
             onClick={() => setSubTab(id)}
-            className={`px-4 py-2 text-xs sm:text-sm font-medium rounded-xl transition-all whitespace-nowrap shrink-0 cursor-pointer ${
+            className={`min-h-[38px] px-3.5 py-1.5 text-xs sm:text-sm font-medium rounded-xl transition-all whitespace-nowrap shrink-0 cursor-pointer ${
               subTab === id
                 ? 'ft-accent-gradient font-semibold'
                 : 'text-[var(--ft-text-secondary)] hover:text-[var(--ft-text-primary)] hover:bg-[var(--ft-surface-hover)]'
@@ -876,12 +899,12 @@ export const SystemView: React.FC<SystemViewProps> = ({
                 ltrNum
                 label={t(lang, 'رمز PIN فعلی', 'Current PIN')}
                 success={
-                  currentPinCheck.length > 0 && currentPinCheck === s.pinCode
+                  currentPinValid === true
                     ? t(lang, 'رمز فعلی صحیح است', 'Current PIN verified')
                     : undefined
                 }
                 warning={
-                  currentPinCheck.length >= 4 && currentPinCheck !== s.pinCode
+                  currentPinValid === false
                     ? t(lang, 'با رمز فعلی تطابق ندارد', 'Does not match current PIN')
                     : undefined
                 }

@@ -6,7 +6,7 @@ import { useOnlineStatus, usePWAInstall } from '../hooks/usePWAInstall';
 
 interface PWAInstallButtonProps {
   lang: AppLanguage;
-  variant?: 'header' | 'card';
+  variant?: 'header' | 'card' | 'icon';
   onInstalledToast?: (msg: string) => void;
 }
 
@@ -27,6 +27,40 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
       );
     }
   };
+
+  if (variant === 'icon') {
+    if (isInstalled) return null;
+    if (isInstallable) {
+      return (
+        <button
+          type="button"
+          onClick={handleInstallClick}
+          title={t(lang, 'نصب اپلیکیشن', 'Install App')}
+          aria-label={t(lang, 'نصب اپلیکیشن', 'Install App')}
+          className="h-11 flex-1 min-w-[44px] rounded-2xl bg-[var(--ft-surface-subtle)] hover:bg-[var(--ft-surface-hover)] border border-[var(--ft-border)] flex items-center justify-center text-[var(--ft-accent)] transition-colors cursor-pointer"
+        >
+          <Download className="w-4 h-4" />
+        </button>
+      );
+    }
+    if (isIOS) {
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => setShowGuide(true)}
+            title={t(lang, 'نصب روی آیفون', 'Install iOS')}
+            aria-label={t(lang, 'نصب روی آیفون', 'Install iOS')}
+            className="h-11 flex-1 min-w-[44px] rounded-2xl bg-[var(--ft-surface-subtle)] hover:bg-[var(--ft-surface-hover)] border border-[var(--ft-border)] flex items-center justify-center text-[var(--ft-accent)] transition-colors cursor-pointer"
+          >
+            <Smartphone className="w-4 h-4" />
+          </button>
+          {showGuide && <InstallGuideModal lang={lang} isIOS isInIframe={isInIframe} onClose={() => setShowGuide(false)} />}
+        </>
+      );
+    }
+    return null;
+  }
 
   if (variant === 'header') {
     if (isInstalled) return null;
@@ -274,7 +308,7 @@ export const OfflineIndicator: React.FC<{ lang: AppLanguage }> = ({ lang }) => {
   if (isOnline) return null;
 
   return (
-    <div className="fixed bottom-4 start-4 z-[90] flex items-center gap-2 rounded-full bg-[var(--ft-warning)] px-3.5 py-2 text-xs font-semibold text-black shadow-lg no-print">
+    <div className="fixed bottom-20 lg:bottom-4 start-3 sm:start-4 z-[90] flex items-center gap-2 rounded-full bg-[var(--ft-warning)] px-3.5 py-2 text-xs font-semibold text-black shadow-lg no-print">
       <WifiOff className="w-3.5 h-3.5" />
       <span>{t(lang, 'حالت آفلاین — داده‌های محلی فعال است', 'Offline Mode — Using cached data')}</span>
     </div>

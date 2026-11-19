@@ -1,22 +1,30 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
+  Award,
+  BarChart3,
   Bell,
   BellRing,
   Calendar,
+  Clock,
   Download,
   FileUp,
   FolderSync,
   RefreshCw,
   Search,
+  ShieldCheck,
   Trash2,
   TrendingUp,
   Upload,
+  Volume2,
+  VolumeX,
   X,
 } from 'lucide-react';
+import { playNewsAlarmSound } from '../utils/soundAlert';
 import {
   AppLanguage,
   EconomicEvent,
+  EmotionTag,
   FundTrackState,
   PersianCalendarHoliday,
   SystemSettings,
@@ -51,7 +59,16 @@ import {
 } from './Charts';
 import { GlassSelect, GlassSwitch } from './GlassControls';
 import { MaterialInput } from './MaterialInputs';
+import { M3AccordionCard, M3SnapCarousel } from './M3MobilePrimitives';
 import { TradingRiskAndImportSection } from './TradingRiskAndImportSection';
+
+const QUICK_EMOTION_PILLS: Array<{ id: EmotionTag; fa: string; en: string }> = [
+  { id: 'calm', fa: 'آرام', en: 'Calm' },
+  { id: 'focused', fa: 'مطمئن', en: 'Focused' },
+  { id: 'hesitant', fa: 'تردید', en: 'Hesitant' },
+  { id: 'fomo', fa: 'FOMO', en: 'FOMO' },
+  { id: 'revenge', fa: 'انتقامی', en: 'Revenge' },
+];
 
 interface TradingViewProps {
   state: FundTrackState;
@@ -59,6 +76,10 @@ interface TradingViewProps {
   setSubTab: (tab: TradingSubTab) => void;
   range: TimeRange;
   onInspectTrade: (trade: Trade) => void;
+  onUpdateTradeReview?: (
+    tradeId: string,
+    patch: Partial<Pick<Trade, 'setupTag' | 'emotionTag' | 'slRespected' | 'reviewNote'>>
+  ) => void;
   onSyncMt5: () => void;
   onImportEventsJsonl: (text: string) => void;
   onSyncLocalEaFile: (customPath?: string) => Promise<void>;
@@ -78,6 +99,7 @@ export const TradingView: React.FC<TradingViewProps> = ({
   setSubTab,
   range,
   onInspectTrade,
+  onUpdateTradeReview,
   onSyncMt5,
   onImportEventsJsonl,
   onSyncLocalEaFile,
@@ -358,24 +380,24 @@ export const TradingView: React.FC<TradingViewProps> = ({
   };
 
   return (
-    <div className="space-y-6">
-      {/* Sub-navigation */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="inline-flex flex-wrap items-center gap-1 p-1 rounded-xl glass-surface">
+    <div className="space-y-4 sm:space-y-6">
+      {/* Material Design 3 Sub-navigation */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="inline-flex items-center gap-1 p-1 rounded-2xl glass-surface overflow-x-auto no-scrollbar max-w-full flex-nowrap">
           {(
             [
               ['journal', t(lang, 'ژورنال', 'Journal')],
               ['analytics', t(lang, 'آنالیز', 'Analytics')],
-              ['risk', t(lang, 'ریسک و CSV', 'Risk & CSV')],
-              ['accounts', t(lang, 'حساب‌های MT5', 'MT5 Accounts')],
-              ['calendar', t(lang, 'اخبار و تقویم', 'News & Holidays')],
+              ['risk', t(lang, 'ریسک', 'Risk')],
+              ['accounts', t(lang, 'حساب‌ها', 'MT5')],
+              ['calendar', t(lang, 'اخبار', 'News')],
             ] as Array<[TradingSubTab, string]>
           ).map(([id, label]) => (
             <button
               key={id}
               type="button"
               onClick={() => setSubTab(id)}
-              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+              className={`min-h-[38px] px-3.5 py-1.5 text-xs sm:text-sm font-medium rounded-xl transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                 subTab === id
                   ? 'ft-accent-gradient font-semibold'
                   : 'text-[var(--ft-text-secondary)] hover:text-[var(--ft-text-primary)]'
@@ -407,7 +429,32 @@ export const TradingView: React.FC<TradingViewProps> = ({
                   {state.eaPositions.length} {t(lang, 'پوزیشن باز', 'open')}
                 </span>
               </div>
-              <div className="overflow-x-auto">
+              {/* Mobile Cards (< sm) */}
+              <div className="sm:hidden space-y-2">
+                {state.eaPositions.map((pos) => (
+                  <div key={`mob_pos_${pos.ticket}`} className="p-3 rounded-2xl glass-tile space-y-1.5 font-num text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <span className="font-bold text-[var(--ft-text-primary)]">{pos.symbol}</span>{' '}
+                        <span className={pos.side === 'BUY' ? 'text-[var(--ft-positive)] font-bold' : 'text-[var(--ft-danger)] font-bold'}>
+                          {pos.side}
+                        </span>{' '}
+                        <span className="text-[var(--ft-text-muted)]">· {pos.volume}</span>
+                      </div>
+                      <span className={`font-bold ${pos.profit >= 0 ? 'text-[var(--ft-positive)]' : 'text-[var(--ft-danger)]'}`}>
+                        {formatUsdInline(pos.profit, isPrivate)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-[var(--ft-text-muted)]">
+                      <span>#{maskText(pos.ticket, isPrivate)} · @ {pos.openPrice}</span>
+                      <span>SL/TP: {pos.sl || '—'} / {pos.tp || '—'}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop Table (>= sm) */}
+              <div className="hidden sm:block overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="text-[var(--ft-text-muted)] border-b border-[var(--ft-border)]">
@@ -564,7 +611,122 @@ export const TradingView: React.FC<TradingViewProps> = ({
             </div>
           )}
 
-          <div className="overflow-x-auto">
+          {/* Mobile Trade Cards (< sm) with Quick 1-Tap Emotion & SL Review Controls */}
+          <div className="sm:hidden space-y-2.5">
+            {filteredTrades.length === 0 ? (
+              <div className="py-8 text-center text-xs text-[var(--ft-text-muted)]">
+                {t(lang, 'معامله‌ای مطابق با فیلترها یافت نشد.', 'No trades match the active filters.')}
+              </div>
+            ) : (
+              filteredTrades.map((tr) => {
+                const holdMins = Math.max(
+                  1,
+                  Math.round((new Date(tr.closeTime).getTime() - new Date(tr.openTime).getTime()) / 60000)
+                );
+                const holdStr =
+                  holdMins >= 60 ? `${Math.floor(holdMins / 60)}h ${holdMins % 60}m` : `${holdMins}m`;
+                const fees = Number(((tr.commissionUsd ?? 0) + (tr.swapUsd ?? 0)).toFixed(2));
+                return (
+                  <div
+                    key={`mob_tr_${tr.id}`}
+                    onClick={() => onInspectTrade(tr)}
+                    className="p-3.5 rounded-2xl glass-tile hover:bg-[var(--ft-surface-hover)] transition-colors cursor-pointer space-y-2.5"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 font-num">
+                          <span className="text-sm font-bold text-[var(--ft-text-primary)]">{tr.symbol}</span>
+                          <span
+                            className={`text-xs font-semibold ${
+                              tr.direction === 'BUY' ? 'text-[var(--ft-positive)]' : 'text-[var(--ft-danger)]'
+                            }`}
+                          >
+                            {tr.direction} · {tr.volume}
+                          </span>
+                        </div>
+                        <div className="text-[11px] font-num text-[var(--ft-text-muted)] truncate">
+                          #{maskText(tr.ticket, isPrivate)} · {tr.session} · {formatJalaliDateTime(tr.closeTime, lang)}
+                        </div>
+                      </div>
+                      <div className="text-end font-num shrink-0">
+                        <div
+                          className={`text-sm font-bold ${
+                            tr.profitUsd >= 0 ? 'text-[var(--ft-positive)]' : 'text-[var(--ft-danger)]'
+                          }`}
+                        >
+                          {formatUsdInline(tr.profitUsd, isPrivate)}
+                        </div>
+                        <div className="text-[11px] text-[var(--ft-text-muted)]">
+                          {tr.rMultiple >= 0 ? '+' : ''}
+                          {tr.rMultiple}R
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-[var(--ft-border)] text-[11px]">
+                      <div className="min-w-0 truncate text-[var(--ft-text-secondary)]">
+                        <strong className="text-[var(--ft-text-primary)]">{tr.setupTag}</strong>
+                        {tr.reviewNote ? ` · ${tr.reviewNote}` : ''}
+                      </div>
+                      <div className="font-num text-[var(--ft-text-muted)] shrink-0">
+                        {holdStr} {fees !== 0 ? `· ${formatUsdInline(fees, isPrivate)}` : ''}
+                      </div>
+                    </div>
+
+                    {/* Quick 1-Tap Emotion & SL Strip */}
+                    {onUpdateTradeReview && (
+                      <div
+                        className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => onUpdateTradeReview(tr.id, { slRespected: !tr.slRespected })}
+                          className={`min-h-[30px] px-2 rounded-lg text-[10px] font-semibold flex items-center gap-1 shrink-0 border cursor-pointer transition-colors ${
+                            tr.slRespected
+                              ? 'bg-[var(--ft-positive-soft)] border-[var(--ft-positive)]/35 text-[var(--ft-positive)]'
+                              : 'bg-[var(--ft-danger-soft)] border-[var(--ft-danger)]/35 text-[var(--ft-danger)]'
+                          }`}
+                        >
+                          <ShieldCheck className="w-3 h-3" />
+                          <span>{tr.slRespected ? 'SL ✓' : 'SL ✕'}</span>
+                        </button>
+                        {QUICK_EMOTION_PILLS.map((em) => {
+                          const isSelected = tr.emotionTag === em.id;
+                          const isRisky = em.id === 'fomo' || em.id === 'revenge';
+                          return (
+                            <button
+                              key={em.id}
+                              type="button"
+                              onClick={() => {
+                                onUpdateTradeReview(tr.id, { emotionTag: em.id });
+                                onShowToast(
+                                  t(lang, `احساس «${em.fa}» ثبت شد`, `Emotion tagged: ${em.en}`),
+                                  'info'
+                                );
+                              }}
+                              className={`min-h-[30px] px-2.5 rounded-lg text-[10px] font-medium shrink-0 border transition-colors cursor-pointer ${
+                                isSelected
+                                  ? isRisky
+                                    ? 'bg-[var(--ft-danger-soft)] border-[var(--ft-danger)] text-[var(--ft-danger)] font-bold'
+                                    : 'ft-accent-gradient border-transparent font-bold'
+                                  : 'border-[var(--ft-border)] text-[var(--ft-text-muted)] hover:text-[var(--ft-text-primary)]'
+                              }`}
+                            >
+                              {lang === 'fa' ? em.fa : em.en}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Desktop Trade Table (>= sm) */}
+          <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-xs text-[var(--ft-text-muted)] border-b border-[var(--ft-border)]">
@@ -643,17 +805,372 @@ export const TradingView: React.FC<TradingViewProps> = ({
         </div>
       )}
 
-      {/* 2. Analytics Sub-tab (Quantitative Engine ported from fundtrack-py) */}
-      {subTab === 'analytics' && (
-        <div className="space-y-6">
+      {/* 2. Analytics Sub-tab (M3 Mobile Chart Carousel + Collapsible Deep-Dive Accordions) */}
+      {subTab === 'analytics' && (() => {
+        const equityCurveCard = (
+          <section className="glass-surface rounded-3xl p-4 sm:p-6 flex flex-col justify-between gap-4 h-full">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold text-[var(--ft-text-primary)]">
+                  {t(lang, 'منحنی رشد سرمایه', 'Equity Curve')}
+                </h3>
+                <div className="font-num text-xs text-[var(--ft-text-muted)] mt-0.5 flex flex-wrap items-center gap-2">
+                  <strong className="text-[var(--ft-accent)]">{rangeLabel}</strong>
+                  <span>· {kpis.tradeCount} {t(lang, 'معامله', 'trades')}</span>
+                  {kpis.equityCurve.length >= 2 && (
+                    <span>
+                      · {equityMode === 'equity'
+                        ? `${t(lang, 'اکوئیتی', 'Eq')}: ${formatMoney(
+                            kpis.equityCurve[0].equity,
+                            'USD',
+                            lang,
+                            false,
+                            isPrivate
+                          )} ← ${formatMoney(
+                            kpis.equityCurve[kpis.equityCurve.length - 1].equity,
+                            'USD',
+                            lang,
+                            false,
+                            isPrivate
+                          )} · Max DD: ${isPrivate ? PRIVATE_MASK : `-$${kpis.maxDrawdownUsd}`}`
+                        : `${t(lang, 'خالص دوره', 'Net')}: ${formatUsdInline(kpis.netProfitUsd, isPrivate)} · ${kpis.winCount}W / ${kpis.lossCount}L`}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="inline-flex items-center gap-1 p-1 rounded-xl glass-tile">
+                <button
+                  type="button"
+                  onClick={() => setEquityMode('equity')}
+                  className={`px-3 py-1 text-[11px] font-medium rounded-lg cursor-pointer transition-colors whitespace-nowrap ${
+                    equityMode === 'equity'
+                      ? 'ft-accent-gradient font-semibold'
+                      : 'text-[var(--ft-text-secondary)] hover:text-[var(--ft-text-primary)]'
+                  }`}
+                >
+                  {t(lang, 'اکوئیتی حساب ($)', 'Account Equity ($)')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEquityMode('pnl')}
+                  className={`px-3 py-1 text-[11px] font-medium rounded-lg cursor-pointer transition-colors whitespace-nowrap ${
+                    equityMode === 'pnl'
+                      ? 'ft-accent-gradient font-semibold'
+                      : 'text-[var(--ft-text-secondary)] hover:text-[var(--ft-text-primary)]'
+                  }`}
+                >
+                  {t(lang, 'سود و زیان دوره‌ای ($)', 'Period P&L ($)')}
+                </button>
+              </div>
+            </div>
+            <EquityAreaChart points={kpis.equityCurve} mode={equityMode} privateMode={isPrivate} />
+          </section>
+        );
+
+        const performanceGaugesCard = (
+          <section className="glass-surface rounded-3xl p-4 sm:p-6 flex flex-col justify-between gap-5 h-full">
+            <h3 className="text-base font-semibold text-[var(--ft-text-primary)]">
+              {t(lang, 'شاخص‌های کلیدی عملکرد', 'Performance Gauges')}
+            </h3>
+            <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
+              <div className="p-2 rounded-2xl glass-tile flex items-center justify-center">
+                <RadialGauge
+                  pct={kpis.winRate}
+                  label={t(lang, 'نرخ برد', 'Win Rate')}
+                  sublabel={`${kpis.winCount}W/${kpis.lossCount}L`}
+                  color="var(--ft-positive)"
+                  gradientTo="var(--ft-accent)"
+                  size={84}
+                  strokeWidth={8}
+                />
+              </div>
+              <div className="p-2 rounded-2xl glass-tile flex items-center justify-center">
+                <RadialGauge
+                  pct={Math.min(100, (kpis.profitFactor / 3) * 100)}
+                  centerText={
+                    kpis.profitFactor >= 9.99 && kpis.grossLossUsd === 0
+                      ? '∞'
+                      : kpis.profitFactor.toFixed(2)
+                  }
+                  label={t(lang, 'ضریب سود (PF)', 'Profit Factor')}
+                  sublabel={
+                    isPrivate
+                      ? '•• / ••'
+                      : `+$${Math.round(kpis.grossProfitUsd)} / -$${Math.round(kpis.grossLossUsd)}`
+                  }
+                  color={
+                    kpis.profitFactor >= 1.5
+                      ? 'var(--ft-positive)'
+                      : kpis.profitFactor >= 1
+                      ? 'var(--ft-accent)'
+                      : 'var(--ft-danger)'
+                  }
+                  gradientTo="var(--ft-accent)"
+                  size={84}
+                  strokeWidth={8}
+                />
+              </div>
+              <div className="p-2 rounded-2xl glass-tile flex items-center justify-center">
+                <RadialGauge
+                  pct={kpis.tradeCount ? (kpis.buyCount / kpis.tradeCount) * 100 : 50}
+                  label={t(lang, 'سهم خرید', 'Long %')}
+                  sublabel={`${kpis.buyCount}B/${kpis.sellCount}S`}
+                  color="var(--ft-warning)"
+                  gradientTo="var(--ft-accent)"
+                  size={84}
+                  strokeWidth={8}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              {kpis.sideBreakdown.map((sb) => (
+                <div key={sb.side} className="p-3 rounded-2xl glass-tile">
+                  <div className="flex items-center justify-between font-num">
+                    <span className={sb.side === 'BUY' ? 'text-[var(--ft-positive)] font-bold' : 'text-[var(--ft-danger)] font-bold'}>
+                      {sb.side} ({sb.trades})
+                    </span>
+                    <span>{sb.winRate}%</span>
+                  </div>
+                  <div className="font-num text-sm font-bold mt-1 text-[var(--ft-text-primary)]">
+                    {formatUsdInline(sb.net, isPrivate)} · {sb.avgR}R
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        );
+
+        const sessionPerformanceCard = (
+          <section className="glass-surface rounded-3xl p-4 sm:p-6 flex flex-col justify-between gap-4 h-full">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold text-[var(--ft-text-primary)]">
+                  {sessionTab === 'sessions'
+                    ? t(lang, 'عملکرد سشن‌های معاملاتی', 'Session Performance')
+                    : t(lang, 'عملکرد روزهای هفته', 'Weekday Performance')}
+                </h3>
+                <p className="text-xs text-[var(--ft-text-muted)] mt-0.5">
+                  {sessionTab === 'sessions'
+                    ? t(lang, 'مقایسه مجزای سشن لندن، نیویورک و آسیا', 'Dedicated London, New York & Asia session breakdown')
+                    : t(lang, 'توزیع سود و نرخ برد در روزهای هفته', 'Net P&L and win rate by day of week')}
+                </p>
+              </div>
+
+              <div className="inline-flex items-center gap-1 p-1 rounded-xl glass-tile">
+                <button
+                  type="button"
+                  onClick={() => setSessionTab('sessions')}
+                  className={`px-3 py-1 text-[11px] font-medium rounded-lg cursor-pointer transition-colors whitespace-nowrap ${
+                    sessionTab === 'sessions'
+                      ? 'ft-accent-gradient font-semibold'
+                      : 'text-[var(--ft-text-secondary)] hover:text-[var(--ft-text-primary)]'
+                  }`}
+                >
+                  {t(lang, 'سشن‌ها', 'Sessions')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSessionTab('weekdays')}
+                  className={`px-3 py-1 text-[11px] font-medium rounded-lg cursor-pointer transition-colors whitespace-nowrap ${
+                    sessionTab === 'weekdays'
+                      ? 'ft-accent-gradient font-semibold'
+                      : 'text-[var(--ft-text-secondary)] hover:text-[var(--ft-text-primary)]'
+                  }`}
+                >
+                  {t(lang, 'روزهای هفته', 'Weekdays')}
+                </button>
+              </div>
+            </div>
+
+            {sessionTab === 'sessions' ? (
+              <div className="space-y-3">
+                {(() => {
+                  const maxSessAbs = Math.max(1, ...sessionStats.map((s) => Math.abs(s.net)));
+                  return sessionStats.map((st) => {
+                    const pct = Math.max(6, Math.round((Math.abs(st.net) / maxSessAbs) * 100));
+                    const pos = st.net >= 0;
+                    const sessFa =
+                      st.session === 'London'
+                        ? 'سشن لندن (London)'
+                        : st.session === 'New York'
+                        ? 'سشن نیویورک (New York)'
+                        : 'سشن آسیا (Asia)';
+                    return (
+                      <div key={st.session} className="p-3.5 rounded-2xl glass-tile space-y-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-[var(--ft-text-primary)]">
+                              {lang === 'fa' ? sessFa : `${st.session} Session`}
+                            </span>
+                            <span className="font-num text-[11px] text-[var(--ft-text-muted)]">
+                              {st.count} {t(lang, 'معامله', 'tr')} · {st.winRate}% WR · {st.avgR >= 0 ? '+' : ''}
+                              {st.avgR}R
+                            </span>
+                          </div>
+                          <span
+                            className={`font-num text-sm font-bold ${
+                              pos ? 'text-[var(--ft-positive)]' : 'text-[var(--ft-danger)]'
+                            }`}
+                          >
+                            {formatUsdInline(st.net, isPrivate)}
+                          </span>
+                        </div>
+                        <div className="h-2.5 rounded-full bg-[var(--ft-surface-subtle)] border border-[var(--ft-border)] overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all duration-300"
+                            style={{
+                              width: `${st.count === 0 ? 0 : pct}%`,
+                              background: pos
+                                ? 'linear-gradient(90deg, var(--ft-positive), var(--ft-accent))'
+                                : 'linear-gradient(90deg, var(--ft-danger), var(--ft-warning))',
+                            }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            ) : (
+              <BipolarVerticalBarChart
+                items={kpis.weekdayBreakdown.map((wb) => ({
+                  key: wb.day,
+                  label: wb.day,
+                  value: wb.profit,
+                  count: wb.count,
+                  winRate: wb.winRate,
+                  formattedValue: isPrivate
+                    ? '••••'
+                    : `${wb.profit >= 0 ? '+' : '-'}$${Math.abs(Math.round(wb.profit))}`,
+                }))}
+                height={195}
+                emptyText={t(lang, 'دیتایی برای روزهای هفته ثبت نشده است', 'No weekday data')}
+              />
+            )}
+          </section>
+        );
+
+        const payoffDistributionCard = (
+          <section className="glass-surface rounded-3xl p-4 sm:p-6 flex flex-col justify-between gap-4 h-full">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold text-[var(--ft-text-primary)]">
+                  {distributionMode === 'payoff'
+                    ? t(lang, 'توزیع بازده معاملات (R-Multiple)', 'Payoff Distribution (R)')
+                    : distributionMode === 'side'
+                    ? t(lang, 'سود و زیان به تفکیک جهت معامله', 'Profit vs Loss by Side')
+                    : t(lang, 'مقایسه سود و زیان به تفکیک نماد', 'Profit vs Loss by Symbol')}
+                </h3>
+                <p className="text-xs text-[var(--ft-text-muted)] mt-0.5">
+                  {distributionMode === 'payoff'
+                    ? t(lang, 'تعداد معاملات در هر بازه ریسک به ریوارد', 'Trade frequency across R-multiple brackets')
+                    : distributionMode === 'side'
+                    ? t(lang, 'مقایسه سود ناخالص و زیان ناخالص در خرید و فروش', 'Gross profit vs gross loss across BUY & SELL')
+                    : t(lang, 'عملکرد تجمیعی به تفکیک نمادها', 'Gross profit vs gross loss across symbols')}
+                </p>
+              </div>
+
+              <div className="inline-flex items-center gap-1 p-1 rounded-xl glass-tile">
+                <button
+                  type="button"
+                  onClick={() => setDistributionMode('payoff')}
+                  className={`px-2.5 py-1 text-[11px] font-medium rounded-lg cursor-pointer transition-colors whitespace-nowrap ${
+                    distributionMode === 'payoff'
+                      ? 'ft-accent-gradient font-semibold'
+                      : 'text-[var(--ft-text-secondary)] hover:text-[var(--ft-text-primary)]'
+                  }`}
+                >
+                  {t(lang, 'توزیع R', 'R-Dist')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDistributionMode('side')}
+                  className={`px-2.5 py-1 text-[11px] font-medium rounded-lg cursor-pointer transition-colors whitespace-nowrap ${
+                    distributionMode === 'side'
+                      ? 'ft-accent-gradient font-semibold'
+                      : 'text-[var(--ft-text-secondary)] hover:text-[var(--ft-text-primary)]'
+                  }`}
+                >
+                  BUY / SELL
+                </button>
+                {uniqueSymbols.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setDistributionMode('symbol')}
+                    className={`px-2.5 py-1 text-[11px] font-medium rounded-lg cursor-pointer transition-colors whitespace-nowrap ${
+                      distributionMode === 'symbol'
+                        ? 'ft-accent-gradient font-semibold'
+                        : 'text-[var(--ft-text-secondary)] hover:text-[var(--ft-text-primary)]'
+                    }`}
+                  >
+                    {t(lang, 'نمادها', 'Symbols')}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {distributionMode === 'payoff' ? (
+              <BipolarVerticalBarChart
+                items={rDistributionBuckets}
+                mode="positive-count"
+                height={195}
+                emptyText={t(lang, 'معامله‌ای برای توزیع بازده موجود نیست', 'No trades for payoff distribution')}
+              />
+            ) : distributionMode === 'side' ? (
+              <ProfitLossStackedBarChart
+                data={(['BUY', 'SELL'] as const).map((side) => {
+                  const grp = rangedTrades.filter((tr) => tr.direction === side);
+                  const p = grp.filter((tr) => tr.profitUsd > 0).reduce((s, tr) => s + tr.profitUsd, 0);
+                  const l = grp.filter((tr) => tr.profitUsd < 0).reduce((s, tr) => s + Math.abs(tr.profitUsd), 0);
+                  return {
+                    label: `${side} (${grp.length})`,
+                    primaryValue: Number(p.toFixed(2)),
+                    secondaryValue: Number(l.toFixed(2)),
+                    primaryFormatted: formatMoney(p, 'USD', lang, false, isPrivate),
+                    secondaryFormatted: formatMoney(l, 'USD', lang, false, isPrivate),
+                  };
+                })}
+                primaryLabel={t(lang, 'سود ناخالص', 'Gross Profit')}
+                secondaryLabel={t(lang, 'زیان ناخالص', 'Gross Loss')}
+                height={200}
+              />
+            ) : (
+              <ProfitLossStackedBarChart
+                data={Array.from(
+                  rangedTrades.reduce((map, tr) => {
+                    const cur = map.get(tr.symbol) ?? { p: 0, l: 0 };
+                    if (tr.profitUsd >= 0) cur.p += tr.profitUsd;
+                    else cur.l += Math.abs(tr.profitUsd);
+                    map.set(tr.symbol, cur);
+                    return map;
+                  }, new Map<string, { p: number; l: number }>())
+                ).map(([label, val]) => ({
+                  label,
+                  primaryValue: Number(val.p.toFixed(2)),
+                  secondaryValue: Number(val.l.toFixed(2)),
+                  primaryFormatted: formatMoney(val.p, 'USD', lang, false, isPrivate),
+                  secondaryFormatted: formatMoney(val.l, 'USD', lang, false, isPrivate),
+                }))}
+                primaryLabel={t(lang, 'سود ناخالص', 'Gross Profit')}
+                secondaryLabel={t(lang, 'زیان ناخالص', 'Gross Loss')}
+                height={200}
+              />
+            )}
+          </section>
+        );
+
+        return (
+        <div className="space-y-5 sm:space-y-6">
           {/* Quantitative Raw-Trade Summary Strip */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            <div className="glass-surface rounded-2xl p-4 flex flex-col justify-between gap-2">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+            <div className="glass-surface rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-2">
               <div className="text-[11px] text-[var(--ft-text-muted)]">
                 {t(lang, 'امید ریاضی معامله', 'Expectancy / Trade')}
               </div>
               <div
-                className={`font-num text-xl font-extrabold ${
+                className={`font-num text-lg sm:text-xl font-extrabold ${
                   kpis.expectancyUsd >= 0 ? 'text-[var(--ft-positive)]' : 'text-[var(--ft-danger)]'
                 }`}
               >
@@ -673,7 +1190,7 @@ export const TradingView: React.FC<TradingViewProps> = ({
               />
             </div>
 
-            <div className="glass-surface rounded-2xl p-4 flex flex-col justify-between gap-2">
+            <div className="glass-surface rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-2">
               <div className="text-[11px] text-[var(--ft-text-muted)]">
                 {t(lang, 'میانگین سود / زیان', 'Avg Win / Avg Loss')}
               </div>
@@ -689,11 +1206,11 @@ export const TradingView: React.FC<TradingViewProps> = ({
               />
             </div>
 
-            <div className="glass-surface rounded-2xl p-4 flex flex-col justify-between gap-2">
+            <div className="glass-surface rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-2">
               <div className="text-[11px] text-[var(--ft-text-muted)]">
                 {t(lang, 'نوار برد و باخت', 'Win / Loss Streaks')}
               </div>
-              <div className="font-num text-xl font-extrabold text-[var(--ft-text-primary)]">
+              <div className="font-num text-lg sm:text-xl font-extrabold text-[var(--ft-text-primary)]">
                 <span className="text-[var(--ft-positive)]">{kpis.maxWinStreak}W</span>
                 {' · '}
                 <span className="text-[var(--ft-danger)]">{kpis.maxLossStreak}L</span>
@@ -704,11 +1221,11 @@ export const TradingView: React.FC<TradingViewProps> = ({
               <div className="h-1 rounded-full" style={{ background: 'var(--ft-accent-grad)' }} />
             </div>
 
-            <div className="glass-surface rounded-2xl p-4 flex flex-col justify-between gap-2">
+            <div className="glass-surface rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-2">
               <div className="text-[11px] text-[var(--ft-text-muted)]">
                 {t(lang, 'مدت نگهداری معامله', 'Hold Duration')}
               </div>
-              <div className="font-num text-xl font-extrabold text-[var(--ft-accent)]">
+              <div className="font-num text-lg sm:text-xl font-extrabold text-[var(--ft-accent)]">
                 {kpis.medianDurationMin}m
               </div>
               <div className="font-num text-[11px] text-[var(--ft-text-muted)]">
@@ -717,7 +1234,7 @@ export const TradingView: React.FC<TradingViewProps> = ({
               <div className="h-1 rounded-full" style={{ background: 'var(--ft-accent-grad)' }} />
             </div>
 
-            <div className="glass-surface rounded-2xl p-4 flex flex-col justify-between gap-2">
+            <div className="glass-surface rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-2">
               <div className="text-[11px] text-[var(--ft-text-muted)]">
                 {t(lang, 'کمیسیون و سواپ', 'Commission & Swap')}
               </div>
@@ -733,7 +1250,7 @@ export const TradingView: React.FC<TradingViewProps> = ({
               />
             </div>
 
-            <div className="glass-surface rounded-2xl p-4 flex flex-col justify-between gap-2">
+            <div className="glass-surface rounded-2xl p-3.5 sm:p-4 flex flex-col justify-between gap-2">
               <div className="text-[11px] text-[var(--ft-text-muted)]">
                 {t(lang, 'بهترین و بدترین', 'Best / Worst Trade')}
               </div>
@@ -750,531 +1267,210 @@ export const TradingView: React.FC<TradingViewProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-            <section className="lg:col-span-7 glass-surface rounded-3xl p-6 flex flex-col justify-between gap-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-base font-semibold text-[var(--ft-text-primary)]">
-                    {t(lang, 'منحنی رشد سرمایه', 'Equity Curve')}
-                  </h3>
-                  <div className="font-num text-xs text-[var(--ft-text-muted)] mt-0.5 flex flex-wrap items-center gap-2">
-                    <strong className="text-[var(--ft-accent)]">{rangeLabel}</strong>
-                    <span>· {kpis.tradeCount} {t(lang, 'معامله', 'trades')}</span>
-                    {kpis.equityCurve.length >= 2 && (
-                      <span>
-                        · {equityMode === 'equity'
-                          ? `${t(lang, 'اکوئیتی', 'Eq')}: ${formatMoney(
-                              kpis.equityCurve[0].equity,
-                              'USD',
-                              lang,
-                              false,
-                              isPrivate
-                            )} ← ${formatMoney(
-                              kpis.equityCurve[kpis.equityCurve.length - 1].equity,
-                              'USD',
-                              lang,
-                              false,
-                              isPrivate
-                            )} · Max DD: ${isPrivate ? PRIVATE_MASK : `-$${kpis.maxDrawdownUsd}`}`
-                          : `${t(lang, 'خالص دوره', 'Net')}: ${formatUsdInline(kpis.netProfitUsd, isPrivate)} · ${kpis.winCount}W / ${kpis.lossCount}L`}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="inline-flex items-center gap-1 p-1 rounded-xl glass-tile">
-                  <button
-                    type="button"
-                    onClick={() => setEquityMode('equity')}
-                    className={`px-3 py-1 text-[11px] font-medium rounded-lg cursor-pointer transition-colors whitespace-nowrap ${
-                      equityMode === 'equity'
-                        ? 'ft-accent-gradient font-semibold'
-                        : 'text-[var(--ft-text-secondary)] hover:text-[var(--ft-text-primary)]'
-                    }`}
-                  >
-                    {t(lang, 'اکوئیتی حساب ($)', 'Account Equity ($)')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEquityMode('pnl')}
-                    className={`px-3 py-1 text-[11px] font-medium rounded-lg cursor-pointer transition-colors whitespace-nowrap ${
-                      equityMode === 'pnl'
-                        ? 'ft-accent-gradient font-semibold'
-                        : 'text-[var(--ft-text-secondary)] hover:text-[var(--ft-text-primary)]'
-                    }`}
-                  >
-                    {t(lang, 'سود و زیان دوره‌ای ($)', 'Period P&L ($)')}
-                  </button>
-                </div>
-              </div>
-              <EquityAreaChart points={kpis.equityCurve} mode={equityMode} privateMode={isPrivate} />
-            </section>
-
-            <section className="lg:col-span-5 glass-surface rounded-3xl p-6 flex flex-col justify-between gap-5">
-              <h3 className="text-base font-semibold text-[var(--ft-text-primary)]">
-                {t(lang, 'شاخص‌های کلیدی عملکرد', 'Performance Gauges')}
-              </h3>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="p-2.5 rounded-2xl glass-tile flex items-center justify-center">
-                  <RadialGauge
-                    pct={kpis.winRate}
-                    label={t(lang, 'نرخ برد', 'Win Rate')}
-                    sublabel={`${kpis.winCount}W/${kpis.lossCount}L`}
-                    color="var(--ft-positive)"
-                    gradientTo="var(--ft-accent)"
-                    size={90}
-                    strokeWidth={8}
-                  />
-                </div>
-                <div className="p-2.5 rounded-2xl glass-tile flex items-center justify-center">
-                  <RadialGauge
-                    pct={Math.min(100, (kpis.profitFactor / 3) * 100)}
-                    centerText={
-                      kpis.profitFactor >= 9.99 && kpis.grossLossUsd === 0
-                        ? '∞'
-                        : kpis.profitFactor.toFixed(2)
-                    }
-                    label={t(lang, 'ضریب سود (PF)', 'Profit Factor')}
-                    sublabel={
-                      isPrivate
-                        ? '•• / ••'
-                        : `+$${Math.round(kpis.grossProfitUsd)} / -$${Math.round(kpis.grossLossUsd)}`
-                    }
-                    color={
-                      kpis.profitFactor >= 1.5
-                        ? 'var(--ft-positive)'
-                        : kpis.profitFactor >= 1
-                        ? 'var(--ft-accent)'
-                        : 'var(--ft-danger)'
-                    }
-                    gradientTo="var(--ft-accent)"
-                    size={90}
-                    strokeWidth={8}
-                  />
-                </div>
-                <div className="p-2.5 rounded-2xl glass-tile flex items-center justify-center">
-                  <RadialGauge
-                    pct={kpis.tradeCount ? (kpis.buyCount / kpis.tradeCount) * 100 : 50}
-                    label={t(lang, 'سهم خرید', 'Long %')}
-                    sublabel={`${kpis.buyCount}B/${kpis.sellCount}S`}
-                    color="var(--ft-warning)"
-                    gradientTo="var(--ft-accent)"
-                    size={90}
-                    strokeWidth={8}
-                  />
-                </div>
-              </div>
-
-              {/* BUY vs SELL Quantitative Breakdown */}
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                {kpis.sideBreakdown.map((sb) => (
-                  <div key={sb.side} className="p-3 rounded-2xl glass-tile">
-                    <div className="flex items-center justify-between font-num">
-                      <span className={sb.side === 'BUY' ? 'text-[var(--ft-positive)] font-bold' : 'text-[var(--ft-danger)] font-bold'}>
-                        {sb.side} ({sb.trades})
-                      </span>
-                      <span>{sb.winRate}%</span>
-                    </div>
-                    <div className="font-num text-sm font-bold mt-1 text-[var(--ft-text-primary)]">
-                      {formatUsdInline(sb.net, isPrivate)} · {sb.avgR}R
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
+          {/* Mobile Primary Charts Snap Carousel (< md) */}
+          <div className="md:hidden">
+            <M3SnapCarousel
+              showTabs
+              showDots
+              ariaLabel={t(lang, 'کاروسل نمودارهای ترید', 'Trading Charts Carousel')}
+              items={[
+                { id: 'equity', label: t(lang, 'منحنی سرمایه', 'Equity'), content: equityCurveCard },
+                { id: 'gauges', label: t(lang, 'شاخص عملکرد', 'Gauges'), content: performanceGaugesCard },
+                { id: 'sessions', label: t(lang, 'سشن‌ها', 'Sessions'), content: sessionPerformanceCard },
+                { id: 'payoff', label: t(lang, 'توزیع R', 'R-Dist'), content: payoffDistributionCard },
+              ]}
+            />
           </div>
 
-          {/* Unified Hour-of-Day x Day-of-Week Win Rate & P&L Density Heatmap */}
-          <section className="glass-surface rounded-3xl p-6 space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h3 className="text-base font-semibold text-[var(--ft-text-primary)]">
-                  {t(lang, 'نقشه چگالی ساعت و روز هفته', 'Hour × Weekday Performance')}
-                </h3>
-                <p className="text-xs text-[var(--ft-text-muted)]">
-                  {t(
-                    lang,
-                    'بین حالت نرخ برد و سود/زیان دلاری سوئیچ کنید؛ کلیک روی هر خانه معاملات همان ساعت را در ژورنال باز می‌کند',
-                    'Switch between Win Rate and Net P&L modes; click any cell to filter matching trades in Journal'
-                  )}
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-3 font-num text-xs">
-                <span className="text-[var(--ft-positive)]">
-                  {t(lang, 'بهترین روز:', 'Best Day:')} {kpis.bestDayLabel} ({formatUsdInline(kpis.bestDayProfitUsd, isPrivate)})
-                </span>
-                <span className="text-[var(--ft-accent)]">
-                  {kpis.heatmapCells.length} {t(lang, 'پنجره فعال', 'active windows')}
-                </span>
-              </div>
+          {/* Desktop Primary Charts Bento Grid (>= md) */}
+          <div className="hidden md:block space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+              <div className="lg:col-span-7">{equityCurveCard}</div>
+              <div className="lg:col-span-5">{performanceGaugesCard}</div>
             </div>
-            <TradeWinRateDensityHeatmap
-              cells={kpis.heatmapCells}
-              weekdays={PERSIAN_WEEKDAYS_ORDER}
-              privateMode={isPrivate}
-              emptyText={t(lang, 'معامله‌ای برای رسم نقشه چگالی موجود نیست', 'No trades available for density heatmap')}
-              onSelectCell={(cell) =>
-                applyDrillFilter({ weekday: cell.weekday, hour: cell.hour })
-              }
-              labels={{
-                allHours: t(lang, 'ماتریس ۲۴ ساعته', '24h Full Grid'),
-                activeHours: t(lang, 'ساعات فعال', 'Active Hours'),
-                modeWinRate: t(lang, 'حالت: نرخ برد', 'Mode: Win Rate'),
-                modePnl: t(lang, 'حالت: سود و زیان ($)', 'Mode: Net P&L ($)'),
-                winRate: t(lang, 'نرخ برد', 'Win Rate'),
-                trades: t(lang, 'تعداد', 'Trades'),
-                netPnl: t(lang, 'سود/زیان خالص', 'Net P&L'),
-                peakWindow: t(lang, 'بهترین پنجره', 'Peak Window'),
-                hoverHint: t(
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+              <div className="lg:col-span-6">{sessionPerformanceCard}</div>
+              <div className="lg:col-span-6">{payoffDistributionCard}</div>
+            </div>
+          </div>
+
+          {/* Accordion 1: Hour x Weekday Density Heatmap */}
+          <M3AccordionCard
+            title={t(lang, 'نقشه چگالی ساعت و روز هفته', 'Hour × Weekday Performance')}
+            summaryText={`${t(lang, 'بهترین روز:', 'Best Day:')} ${kpis.bestDayLabel} (${formatUsdInline(kpis.bestDayProfitUsd, isPrivate)}) · ${kpis.heatmapCells.length} ${t(lang, 'پنجره فعال', 'windows')}`}
+            icon={<BarChart3 className="w-4 h-4" />}
+            defaultOpenMobile={false}
+            defaultOpenDesktop={true}
+          >
+            <div className="space-y-4 pt-2">
+              <p className="text-xs text-[var(--ft-text-muted)]">
+                {t(
                   lang,
-                  'روی هر خانه بروید یا کلیک کنید تا معاملات همان ساعت در ژورنال باز شوند',
-                  'Hover to inspect or click any cell to filter matching trades in Journal'
-                ),
-                lowDensity: t(lang, '۰٪ باخت', '0% Loss'),
-                highDensity: t(lang, '۱۰۰٪ برد', '100% Win'),
-              }}
-            />
-          </section>
-
-          {/* Duration Buckets + Compact Hourly Edge (Intervals / Bar / Area) */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-            <section className="lg:col-span-6 glass-surface rounded-3xl p-6 space-y-4">
-              <div>
-                <h3 className="text-base font-semibold text-[var(--ft-text-primary)]">
-                  {t(lang, 'بازه مدت نگهداری معامله', 'Holding Duration')}
-                </h3>
-                <p className="text-xs text-[var(--ft-text-muted)]">
-                  {t(lang, 'برای مشاهده معاملات هر بازه در ژورنال، روی ردیف کلیک کنید', 'Click any duration bucket to inspect matching trades')}
-                </p>
-              </div>
-              <DurationBucketsChart
-                buckets={kpis.durationBuckets}
+                  'بین حالت نرخ برد و سود/زیان دلاری سوئیچ کنید؛ کلیک روی هر خانه معاملات همان ساعت را در ژورنال باز می‌کند',
+                  'Switch between Win Rate and Net P&L modes; click any cell to filter matching trades in Journal'
+                )}
+              </p>
+              <TradeWinRateDensityHeatmap
+                cells={kpis.heatmapCells}
+                weekdays={PERSIAN_WEEKDAYS_ORDER}
                 privateMode={isPrivate}
-                emptyText={t(lang, 'دیتایی برای تحلیل مدت نگهداری یافت نشد', 'No duration data')}
-                onSelectBucket={(bucket) => applyDrillFilter({ durationBucket: bucket })}
-              />
-            </section>
-
-            <section className="lg:col-span-6 glass-surface rounded-3xl p-6 space-y-4">
-              <div>
-                <h3 className="text-base font-semibold text-[var(--ft-text-primary)]">
-                  {t(lang, 'بازده ساعتی معاملات', 'Hourly Edge')}
-                </h3>
-                <p className="text-xs text-[var(--ft-text-muted)]">
-                  {t(lang, 'نمای بازه‌ای یا ساعتی به شکل میله‌ای و مساحت', '4h interval or active-hour breakdown in Bar or Area view')}
-                </p>
-              </div>
-              <HourlyPerformanceChart
-                hourly={kpis.hourlyBreakdown}
-                privateMode={isPrivate}
-                emptyText={t(lang, 'دیتایی برای بازده ساعتی یافت نشد', 'No hourly data')}
+                emptyText={t(lang, 'معامله‌ای برای رسم نقشه چگالی موجود نیست', 'No trades available for density heatmap')}
+                onSelectCell={(cell) =>
+                  applyDrillFilter({ weekday: cell.weekday, hour: cell.hour })
+                }
                 labels={{
-                  intervals: t(lang, 'بازه‌های ۴ ساعته', '4h Intervals'),
+                  allHours: t(lang, 'ماتریس ۲۴ ساعته', '24h Full Grid'),
                   activeHours: t(lang, 'ساعات فعال', 'Active Hours'),
-                  bar: t(lang, 'میله‌ای', 'Bar'),
-                  area: t(lang, 'مساحت (Area)', 'Area'),
-                  trades: t(lang, 'ترید', 'trades'),
-                  winRate: t(lang, 'نرخ برد', 'WR'),
-                  hoverHint: t(lang, 'برای جزئیات هر بازه روی نمودار بروید', 'Hover over bars/points to inspect window edge'),
+                  modeWinRate: t(lang, 'حالت: نرخ برد', 'Mode: Win Rate'),
+                  modePnl: t(lang, 'حالت: سود و زیان ($)', 'Mode: Net P&L ($)'),
+                  winRate: t(lang, 'نرخ برد', 'Win Rate'),
+                  trades: t(lang, 'تعداد', 'Trades'),
+                  netPnl: t(lang, 'سود/زیان خالص', 'Net P&L'),
+                  peakWindow: t(lang, 'بهترین پنجره', 'Peak Window'),
+                  hoverHint: t(
+                    lang,
+                    'روی هر خانه بروید یا کلیک کنید تا معاملات همان ساعت در ژورنال باز شوند',
+                    'Hover to inspect or click any cell to filter matching trades in Journal'
+                  ),
+                  lowDensity: t(lang, '۰٪ باخت', '0% Loss'),
+                  highDensity: t(lang, '۱۰۰٪ برد', '100% Win'),
                 }}
               />
-            </section>
-          </div>
+            </div>
+          </M3AccordionCard>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-            {/* Separated Session vs Weekday Analytics */}
-            <section className="lg:col-span-6 glass-surface rounded-2xl p-6 flex flex-col justify-between gap-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
+          {/* Accordion 2: Duration Buckets + Hourly Edge */}
+          <M3AccordionCard
+            title={t(lang, 'تحلیل مدت نگهداری و بازده ساعتی', 'Holding Duration & Hourly Edge')}
+            summaryText={`${t(lang, 'میانه نگهداری:', 'Median Hold:')} ${kpis.medianDurationMin}m · ${t(lang, 'میانگین:', 'Avg:')} ${kpis.avgDurationMin}m`}
+            icon={<Clock className="w-4 h-4" />}
+            defaultOpenMobile={false}
+            defaultOpenDesktop={true}
+          >
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch pt-2">
+              <div className="lg:col-span-6 space-y-3">
                 <div>
-                  <h3 className="text-base font-semibold text-[var(--ft-text-primary)]">
-                    {sessionTab === 'sessions'
-                      ? t(lang, 'عملکرد سشن‌های معاملاتی', 'Session Performance')
-                      : t(lang, 'عملکرد روزهای هفته', 'Weekday Performance')}
-                  </h3>
-                  <p className="text-xs text-[var(--ft-text-muted)] mt-0.5">
-                    {sessionTab === 'sessions'
-                      ? t(lang, 'مقایسه مجزای سشن لندن، نیویورک و آسیا', 'Dedicated London, New York & Asia session breakdown')
-                      : t(lang, 'توزیع سود و نرخ برد در روزهای هفته', 'Net P&L and win rate by day of week')}
+                  <h4 className="text-sm font-semibold text-[var(--ft-text-primary)]">
+                    {t(lang, 'بازه مدت نگهداری معامله', 'Holding Duration')}
+                  </h4>
+                  <p className="text-xs text-[var(--ft-text-muted)]">
+                    {t(lang, 'برای مشاهده معاملات هر بازه در ژورنال، روی ردیف کلیک کنید', 'Click any duration bucket to inspect matching trades')}
                   </p>
                 </div>
-
-                <div className="inline-flex items-center gap-1 p-1 rounded-xl glass-tile">
-                  <button
-                    type="button"
-                    onClick={() => setSessionTab('sessions')}
-                    className={`px-3 py-1 text-[11px] font-medium rounded-lg cursor-pointer transition-colors whitespace-nowrap ${
-                      sessionTab === 'sessions'
-                        ? 'ft-accent-gradient font-semibold'
-                        : 'text-[var(--ft-text-secondary)] hover:text-[var(--ft-text-primary)]'
-                    }`}
-                  >
-                    {t(lang, 'سشن‌ها', 'Sessions')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSessionTab('weekdays')}
-                    className={`px-3 py-1 text-[11px] font-medium rounded-lg cursor-pointer transition-colors whitespace-nowrap ${
-                      sessionTab === 'weekdays'
-                        ? 'ft-accent-gradient font-semibold'
-                        : 'text-[var(--ft-text-secondary)] hover:text-[var(--ft-text-primary)]'
-                    }`}
-                  >
-                    {t(lang, 'روزهای هفته', 'Weekdays')}
-                  </button>
-                </div>
+                <DurationBucketsChart
+                  buckets={kpis.durationBuckets}
+                  privateMode={isPrivate}
+                  emptyText={t(lang, 'دیتایی برای تحلیل مدت نگهداری یافت نشد', 'No duration data')}
+                  onSelectBucket={(bucket) => applyDrillFilter({ durationBucket: bucket })}
+                />
               </div>
 
-              {sessionTab === 'sessions' ? (
-                <div className="space-y-3">
-                  {(() => {
-                    const maxSessAbs = Math.max(1, ...sessionStats.map((s) => Math.abs(s.net)));
-                    return sessionStats.map((st) => {
-                      const pct = Math.max(6, Math.round((Math.abs(st.net) / maxSessAbs) * 100));
-                      const pos = st.net >= 0;
-                      const sessFa =
-                        st.session === 'London'
-                          ? 'سشن لندن (London)'
-                          : st.session === 'New York'
-                          ? 'سشن نیویورک (New York)'
-                          : 'سشن آسیا (Asia)';
-                      return (
-                        <div key={st.session} className="p-3.5 rounded-2xl glass-tile space-y-2">
-                          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold text-[var(--ft-text-primary)]">
-                                {lang === 'fa' ? sessFa : `${st.session} Session`}
-                              </span>
-                              <span className="font-num text-[11px] text-[var(--ft-text-muted)]">
-                                {st.count} {t(lang, 'معامله', 'tr')} · {st.winRate}% WR · {st.avgR >= 0 ? '+' : ''}
-                                {st.avgR}R
-                              </span>
-                            </div>
-                            <span
-                              className={`font-num text-sm font-bold ${
-                                pos ? 'text-[var(--ft-positive)]' : 'text-[var(--ft-danger)]'
-                              }`}
-                            >
-                              {formatUsdInline(st.net, isPrivate)}
-                            </span>
-                          </div>
-                          <div className="h-2.5 rounded-full bg-[var(--ft-surface-subtle)] border border-[var(--ft-border)] overflow-hidden">
-                            <div
-                              className="h-full rounded-full transition-all duration-300"
-                              style={{
-                                width: `${st.count === 0 ? 0 : pct}%`,
-                                background: pos
-                                  ? 'linear-gradient(90deg, var(--ft-positive), var(--ft-accent))'
-                                  : 'linear-gradient(90deg, var(--ft-danger), var(--ft-warning))',
-                              }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
-              ) : (
-                <BipolarVerticalBarChart
-                  items={kpis.weekdayBreakdown.map((wb) => ({
-                    key: wb.day,
-                    label: wb.day,
-                    value: wb.profit,
-                    count: wb.count,
-                    winRate: wb.winRate,
-                    formattedValue: isPrivate
-                      ? '••••'
-                      : `${wb.profit >= 0 ? '+' : '-'}$${Math.abs(Math.round(wb.profit))}`,
-                  }))}
-                  height={195}
-                  emptyText={t(lang, 'دیتایی برای روزهای هفته ثبت نشده است', 'No weekday data')}
-                />
-              )}
-            </section>
-
-            {/* Single-Symbol Focused: R-Multiple Payoff Distribution & BUY/SELL Side Edge */}
-            <section className="lg:col-span-6 glass-surface rounded-2xl p-6 flex flex-col justify-between gap-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="lg:col-span-6 space-y-3">
                 <div>
-                  <h3 className="text-base font-semibold text-[var(--ft-text-primary)]">
-                    {distributionMode === 'payoff'
-                      ? t(lang, 'توزیع بازده معاملات (R-Multiple)', 'Payoff Distribution (R)')
-                      : distributionMode === 'side'
-                      ? t(lang, 'سود و زیان به تفکیک جهت معامله', 'Profit vs Loss by Side')
-                      : t(lang, 'مقایسه سود و زیان به تفکیک نماد', 'Profit vs Loss by Symbol')}
-                  </h3>
-                  <p className="text-xs text-[var(--ft-text-muted)] mt-0.5">
-                    {distributionMode === 'payoff'
-                      ? t(lang, 'تعداد معاملات در هر بازه ریسک به ریوارد (مناسب تک‌نماد)', 'Trade frequency across R-multiple brackets')
-                      : distributionMode === 'side'
-                      ? t(lang, 'مقایسه سود ناخالص و زیان ناخالص در خرید و فروش', 'Gross profit vs gross loss across BUY & SELL')
-                      : t(lang, 'عملکرد تجمیعی به تفکیک نمادها', 'Gross profit vs gross loss across symbols')}
+                  <h4 className="text-sm font-semibold text-[var(--ft-text-primary)]">
+                    {t(lang, 'بازده ساعتی معاملات', 'Hourly Edge')}
+                  </h4>
+                  <p className="text-xs text-[var(--ft-text-muted)]">
+                    {t(lang, 'نمای بازه‌ای یا ساعتی به شکل میله‌ای و مساحت', '4h interval or active-hour breakdown in Bar or Area view')}
                   </p>
                 </div>
+                <HourlyPerformanceChart
+                  hourly={kpis.hourlyBreakdown}
+                  privateMode={isPrivate}
+                  emptyText={t(lang, 'دیتایی برای بازده ساعتی یافت نشد', 'No hourly data')}
+                  labels={{
+                    intervals: t(lang, 'بازه‌های ۴ ساعته', '4h Intervals'),
+                    activeHours: t(lang, 'ساعات فعال', 'Active Hours'),
+                    bar: t(lang, 'میله‌ای', 'Bar'),
+                    area: t(lang, 'مساحت (Area)', 'Area'),
+                    trades: t(lang, 'ترید', 'trades'),
+                    winRate: t(lang, 'نرخ برد', 'WR'),
+                    hoverHint: t(lang, 'برای جزئیات هر بازه روی نمودار بروید', 'Hover over bars/points to inspect window edge'),
+                  }}
+                />
+              </div>
+            </div>
+          </M3AccordionCard>
 
-                <div className="inline-flex items-center gap-1 p-1 rounded-xl glass-tile">
-                  <button
-                    type="button"
-                    onClick={() => setDistributionMode('payoff')}
-                    className={`px-2.5 py-1 text-[11px] font-medium rounded-lg cursor-pointer transition-colors whitespace-nowrap ${
-                      distributionMode === 'payoff'
-                        ? 'ft-accent-gradient font-semibold'
-                        : 'text-[var(--ft-text-secondary)] hover:text-[var(--ft-text-primary)]'
-                    }`}
-                  >
-                    {t(lang, 'توزیع R', 'R-Dist')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDistributionMode('side')}
-                    className={`px-2.5 py-1 text-[11px] font-medium rounded-lg cursor-pointer transition-colors whitespace-nowrap ${
-                      distributionMode === 'side'
-                        ? 'ft-accent-gradient font-semibold'
-                        : 'text-[var(--ft-text-secondary)] hover:text-[var(--ft-text-primary)]'
-                    }`}
-                  >
-                    BUY / SELL
-                  </button>
-                  {uniqueSymbols.length > 1 && (
+          {/* Accordion 3: Top Best & Worst Trades Leaderboard */}
+          <M3AccordionCard
+            title={t(lang, 'برترین و پرضررترین معاملات', 'Top Best & Worst Trades')}
+            summaryText={`${t(lang, 'بهترین:', 'Best:')} ${formatUsdInline(kpis.bestTradeUsd, isPrivate)} · ${t(lang, 'بدترین:', 'Worst:')} ${formatUsdInline(kpis.worstTradeUsd, isPrivate)}`}
+            icon={<Award className="w-4 h-4" />}
+            defaultOpenMobile={false}
+            defaultOpenDesktop={true}
+          >
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
+              <div className="space-y-2.5">
+                <h4 className="text-sm font-semibold text-[var(--ft-positive)]">
+                  {t(lang, 'برترین معاملات سودده', 'Top Best Trades')}
+                </h4>
+                <div className="divide-y divide-[var(--ft-border)]">
+                  {kpis.topBestTrades.map((tr) => (
                     <button
+                      key={tr.id}
                       type="button"
-                      onClick={() => setDistributionMode('symbol')}
-                      className={`px-2.5 py-1 text-[11px] font-medium rounded-lg cursor-pointer transition-colors whitespace-nowrap ${
-                        distributionMode === 'symbol'
-                          ? 'ft-accent-gradient font-semibold'
-                          : 'text-[var(--ft-text-secondary)] hover:text-[var(--ft-text-primary)]'
-                      }`}
+                      onClick={() => onInspectTrade(tr)}
+                      className="w-full py-2.5 flex items-center justify-between gap-3 text-start hover:bg-[var(--ft-surface-hover)] px-2 rounded-lg cursor-pointer"
                     >
-                      {t(lang, 'نمادها', 'Symbols')}
+                      <div>
+                        <div className="text-xs font-semibold text-[var(--ft-text-primary)] font-num">
+                          {tr.symbol} · {tr.direction} · #{maskText(tr.ticket, isPrivate)}
+                        </div>
+                        <div className="text-[11px] text-[var(--ft-text-muted)]">{tr.setupTag}</div>
+                      </div>
+                      <div className="text-end font-num">
+                        <div className="text-sm font-bold text-[var(--ft-positive)]">
+                          {formatUsdInline(tr.profitUsd, isPrivate)}
+                        </div>
+                        <div className="text-[11px] text-[var(--ft-text-muted)]">+{tr.rMultiple}R</div>
+                      </div>
                     </button>
-                  )}
+                  ))}
                 </div>
               </div>
 
-              {distributionMode === 'payoff' ? (
-                <BipolarVerticalBarChart
-                  items={rDistributionBuckets}
-                  mode="positive-count"
-                  height={195}
-                  emptyText={t(lang, 'معامله‌ای برای توزیع بازده موجود نیست', 'No trades for payoff distribution')}
-                />
-              ) : distributionMode === 'side' ? (
-                <ProfitLossStackedBarChart
-                  data={(['BUY', 'SELL'] as const).map((side) => {
-                    const grp = rangedTrades.filter((tr) => tr.direction === side);
-                    const p = grp.filter((tr) => tr.profitUsd > 0).reduce((s, tr) => s + tr.profitUsd, 0);
-                    const l = grp.filter((tr) => tr.profitUsd < 0).reduce((s, tr) => s + Math.abs(tr.profitUsd), 0);
-                    return {
-                      label: `${side} (${grp.length})`,
-                      primaryValue: Number(p.toFixed(2)),
-                      secondaryValue: Number(l.toFixed(2)),
-                      primaryFormatted: formatMoney(p, 'USD', lang, false, isPrivate),
-                      secondaryFormatted: formatMoney(l, 'USD', lang, false, isPrivate),
-                    };
-                  })}
-                  primaryLabel={t(lang, 'سود ناخالص', 'Gross Profit')}
-                  secondaryLabel={t(lang, 'زیان ناخالص', 'Gross Loss')}
-                  height={200}
-                />
-              ) : (
-                <ProfitLossStackedBarChart
-                  data={Array.from(
-                    rangedTrades.reduce((map, tr) => {
-                      const cur = map.get(tr.symbol) ?? { p: 0, l: 0 };
-                      if (tr.profitUsd >= 0) cur.p += tr.profitUsd;
-                      else cur.l += Math.abs(tr.profitUsd);
-                      map.set(tr.symbol, cur);
-                      return map;
-                    }, new Map<string, { p: number; l: number }>())
-                  ).map(([label, val]) => ({
-                    label,
-                    primaryValue: Number(val.p.toFixed(2)),
-                    secondaryValue: Number(val.l.toFixed(2)),
-                    primaryFormatted: formatMoney(val.p, 'USD', lang, false, isPrivate),
-                    secondaryFormatted: formatMoney(val.l, 'USD', lang, false, isPrivate),
-                  }))}
-                  primaryLabel={t(lang, 'سود ناخالص', 'Gross Profit')}
-                  secondaryLabel={t(lang, 'زیان ناخالص', 'Gross Loss')}
-                  height={200}
-                />
-              )}
-            </section>
-          </div>
-
-          {/* Top Best & Worst Trades Leaderboard */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <section className="glass-surface rounded-2xl p-6 space-y-3">
-              <h3 className="text-sm font-semibold text-[var(--ft-positive)]">
-                {t(lang, 'برترین معاملات سودده', 'Top Best Trades')}
-              </h3>
-              <div className="divide-y divide-[var(--ft-border)]">
-                {kpis.topBestTrades.map((tr) => (
-                  <button
-                    key={tr.id}
-                    type="button"
-                    onClick={() => onInspectTrade(tr)}
-                    className="w-full py-2.5 flex items-center justify-between gap-3 text-start hover:bg-[var(--ft-surface-hover)] px-2 rounded-lg cursor-pointer"
-                  >
-                    <div>
-                      <div className="text-xs font-semibold text-[var(--ft-text-primary)] font-num">
-                        {tr.symbol} · {tr.direction} · #{maskText(tr.ticket, isPrivate)}
+              <div className="space-y-2.5">
+                <h4 className="text-sm font-semibold text-[var(--ft-danger)]">
+                  {t(lang, 'پرضررترین معاملات', 'Top Worst Trades')}
+                </h4>
+                <div className="divide-y divide-[var(--ft-border)]">
+                  {kpis.topWorstTrades.map((tr) => (
+                    <button
+                      key={tr.id}
+                      type="button"
+                      onClick={() => onInspectTrade(tr)}
+                      className="w-full py-2.5 flex items-center justify-between gap-3 text-start hover:bg-[var(--ft-surface-hover)] px-2 rounded-lg cursor-pointer"
+                    >
+                      <div>
+                        <div className="text-xs font-semibold text-[var(--ft-text-primary)] font-num">
+                          {tr.symbol} · {tr.direction} · #{maskText(tr.ticket, isPrivate)}
+                        </div>
+                        <div className="text-[11px] text-[var(--ft-text-muted)]">{tr.setupTag}</div>
                       </div>
-                      <div className="text-[11px] text-[var(--ft-text-muted)]">{tr.setupTag}</div>
-                    </div>
-                    <div className="text-end font-num">
-                      <div className="text-sm font-bold text-[var(--ft-positive)]">
-                        {formatUsdInline(tr.profitUsd, isPrivate)}
+                      <div className="text-end font-num">
+                        <div className="text-sm font-bold text-[var(--ft-danger)]">
+                          {formatUsdInline(tr.profitUsd, isPrivate)}
+                        </div>
+                        <div className="text-[11px] text-[var(--ft-text-muted)]">{tr.rMultiple}R</div>
                       </div>
-                      <div className="text-[11px] text-[var(--ft-text-muted)]">+{tr.rMultiple}R</div>
-                    </div>
-                  </button>
-                ))}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </section>
+            </div>
+          </M3AccordionCard>
 
-            <section className="glass-surface rounded-2xl p-6 space-y-3">
-              <h3 className="text-sm font-semibold text-[var(--ft-danger)]">
-                {t(lang, 'پرضررترین معاملات', 'Top Worst Trades')}
-              </h3>
-              <div className="divide-y divide-[var(--ft-border)]">
-                {kpis.topWorstTrades.map((tr) => (
-                  <button
-                    key={tr.id}
-                    type="button"
-                    onClick={() => onInspectTrade(tr)}
-                    className="w-full py-2.5 flex items-center justify-between gap-3 text-start hover:bg-[var(--ft-surface-hover)] px-2 rounded-lg cursor-pointer"
-                  >
-                    <div>
-                      <div className="text-xs font-semibold text-[var(--ft-text-primary)] font-num">
-                        {tr.symbol} · {tr.direction} · #{maskText(tr.ticket, isPrivate)}
-                      </div>
-                      <div className="text-[11px] text-[var(--ft-text-muted)]">{tr.setupTag}</div>
-                    </div>
-                    <div className="text-end font-num">
-                      <div className="text-sm font-bold text-[var(--ft-danger)]">
-                        {formatUsdInline(tr.profitUsd, isPrivate)}
-                      </div>
-                      <div className="text-[11px] text-[var(--ft-text-muted)]">{tr.rMultiple}R</div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </section>
-          </div>
-
-          {/* Market Technical Radar (Moved cleanly into Analytics) */}
+          {/* Accordion 4: Market Technical Radar */}
           {state.eaRadar && Object.keys(state.eaRadar).length > 0 && (
-            <section className="glass-surface rounded-3xl p-6 space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-[var(--ft-border)]">
-                <h3 className="text-base font-semibold text-[var(--ft-text-primary)] flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-[var(--ft-accent)]" />
-                  <span>{t(lang, 'رادار تکنیکال بازار', 'Market Technical Radar')}</span>
-                </h3>
-                <span className="font-num text-xs text-[var(--ft-text-muted)]">
-                  {Object.keys(state.eaRadar).length} {t(lang, 'تایم‌فریم', 'timeframes')}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <M3AccordionCard
+              title={t(lang, 'رادار تکنیکال بازار', 'Market Technical Radar')}
+              summaryText={`${Object.keys(state.eaRadar).length} ${t(lang, 'تایم‌فریم فعال', 'active timeframes')}`}
+              icon={<Activity className="w-4 h-4" />}
+              defaultOpenMobile={false}
+              defaultOpenDesktop={true}
+            >
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                 {['PERIOD_M1', 'PERIOD_M15', 'PERIOD_H1', 'PERIOD_H4']
                   .filter((tf) => Boolean(state.eaRadar?.[tf]))
                   .concat(
@@ -1348,10 +1544,11 @@ export const TradingView: React.FC<TradingViewProps> = ({
                     );
                   })}
               </div>
-            </section>
+            </M3AccordionCard>
           )}
         </div>
-      )}
+        );
+      })()}
 
       {/* 2b. Risk, Position Size & CSV Importer Sub-tab */}
       {subTab === 'risk' && (
@@ -1598,30 +1795,30 @@ export const TradingView: React.FC<TradingViewProps> = ({
 
       {/* 4. News & Persian Calendar Holidays Sub-tab */}
       {subTab === 'calendar' && (
-        <section className="glass-surface rounded-2xl p-6 space-y-5">
-          <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-[var(--ft-border)]">
-            <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-[var(--ft-surface-subtle)] border border-[var(--ft-border)]">
+        <section className="glass-surface rounded-3xl p-4 sm:p-6 space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-[var(--ft-border)]">
+            <div className="inline-flex items-center gap-1 p-1 rounded-2xl bg-[var(--ft-surface-subtle)] border border-[var(--ft-border)] overflow-x-auto no-scrollbar max-w-full flex-nowrap">
               <button
                 type="button"
                 onClick={() => setNewsSubView('events')}
-                className={`px-3.5 py-1.5 text-xs font-medium rounded-lg cursor-pointer ${
+                className={`min-h-[36px] px-3.5 py-1.5 text-xs font-medium rounded-xl cursor-pointer whitespace-nowrap shrink-0 ${
                   newsSubView === 'events'
-                    ? 'bg-[var(--ft-accent)] text-[var(--ft-accent-fg)]'
+                    ? 'bg-[var(--ft-accent)] text-[var(--ft-accent-fg)] font-semibold'
                     : 'text-[var(--ft-text-secondary)]'
                 }`}
               >
-                {t(lang, 'رویدادهای اقتصادی', 'Economic Events')}
+                {t(lang, 'اخبار', 'Events')}
               </button>
               <button
                 type="button"
                 onClick={() => setNewsSubView('holidays')}
-                className={`px-3.5 py-1.5 text-xs font-medium rounded-lg cursor-pointer ${
+                className={`min-h-[36px] px-3.5 py-1.5 text-xs font-medium rounded-xl cursor-pointer whitespace-nowrap shrink-0 ${
                   newsSubView === 'holidays'
-                    ? 'bg-[var(--ft-accent)] text-[var(--ft-accent-fg)]'
+                    ? 'bg-[var(--ft-accent)] text-[var(--ft-accent-fg)] font-semibold'
                     : 'text-[var(--ft-text-secondary)]'
                 }`}
               >
-                {t(lang, 'تعطیلات بازار و تقویم ایران', 'Market & Iran Holidays')}
+                {t(lang, 'تعطیلات', 'Holidays')}
               </button>
             </div>
 
@@ -1638,31 +1835,116 @@ export const TradingView: React.FC<TradingViewProps> = ({
                       setRefreshingNews(false);
                     }
                   }}
-                  className="px-3.5 py-2 text-xs font-semibold rounded-xl ft-accent-gradient cursor-pointer flex items-center gap-1.5 whitespace-nowrap disabled:opacity-60"
+                  className="min-h-[38px] px-3.5 py-1.5 text-xs font-semibold rounded-xl ft-accent-gradient cursor-pointer flex items-center gap-1.5 whitespace-nowrap disabled:opacity-60"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${refreshingNews ? 'animate-spin' : ''}`} />
                   <span>
                     {refreshingNews
-                      ? t(lang, 'در حال دریافت اخبار...', 'Updating News...')
-                      : t(lang, 'به‌روزرسانی اخبار (رایگان)', 'Refresh Live News (Free)')}
+                      ? t(lang, 'در حال دریافت...', 'Updating...')
+                      : t(lang, 'به‌روزرسانی اخبار', 'Refresh News')}
                   </span>
                 </button>
               )}
 
-              <label className="px-3.5 py-2 text-xs font-medium rounded-xl border border-[var(--ft-border-strong)] hover:bg-[var(--ft-surface-hover)] cursor-pointer flex items-center gap-1.5">
+              <label className="min-h-[38px] px-3.5 py-1.5 text-xs font-medium rounded-xl border border-[var(--ft-border-strong)] hover:bg-[var(--ft-surface-hover)] cursor-pointer flex items-center gap-1.5 whitespace-nowrap">
                 <Upload className="w-3.5 h-3.5" />
-                <span>{t(lang, 'واردات رویداد (JSON)', 'Import Events')}</span>
+                <span>{t(lang, 'ورود JSON', 'Import JSON')}</span>
                 <input type="file" accept=".json" onChange={handleNewsFileUpload} className="hidden" />
               </label>
             </div>
           </div>
 
           {newsSubView === 'events' ? (
-            <div className="divide-y divide-[var(--ft-border)]">
-              {state.economicEvents.map((ev) => (
+            <div className="space-y-4">
+              {/* Configurable News Notification Lead Time (15m / 30m etc.) & Web Audio Sound Controls */}
+              <div className="p-3.5 rounded-2xl glass-tile flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-semibold text-[var(--ft-text-primary)]">
+                    {t(lang, 'اعلان اخبار روز قبل از خبر:', 'Notify before today news:')}
+                  </span>
+                  <div className="inline-flex items-center gap-1 p-0.5 rounded-xl bg-[var(--ft-surface-subtle)] border border-[var(--ft-border)]">
+                    {[5, 10, 15, 30, 60].map((mins) => {
+                      const active = (state.settings.newsAlertLeadMinutes ?? 15) === mins;
+                      return (
+                        <button
+                          key={mins}
+                          type="button"
+                          onClick={() => onUpdateSettings({ newsAlertLeadMinutes: mins })}
+                          className={`px-2.5 py-1 rounded-lg font-num text-xs font-medium cursor-pointer transition-colors ${
+                            active
+                              ? 'ft-accent-gradient font-semibold'
+                              : 'text-[var(--ft-text-secondary)] hover:text-[var(--ft-text-primary)]'
+                          }`}
+                        >
+                          {mins}m
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onUpdateSettings({
+                        newsAlertSoundEnabled: state.settings.newsAlertSoundEnabled === false,
+                      })
+                    }
+                    className={`min-h-[34px] px-3 py-1 rounded-xl border text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors ${
+                      state.settings.newsAlertSoundEnabled !== false
+                        ? 'border-[var(--ft-accent)] bg-[var(--ft-accent-soft)] text-[var(--ft-accent)]'
+                        : 'border-[var(--ft-border)] text-[var(--ft-text-muted)]'
+                    }`}
+                  >
+                    {state.settings.newsAlertSoundEnabled !== false ? (
+                      <Volume2 className="w-3.5 h-3.5" />
+                    ) : (
+                      <VolumeX className="w-3.5 h-3.5" />
+                    )}
+                    <span>
+                      {state.settings.newsAlertSoundEnabled !== false
+                        ? t(lang, 'صدا روشن', 'Sound On')
+                        : t(lang, 'صدا خاموش', 'Muted')}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const ok = playNewsAlarmSound();
+                      onShowToast(
+                        ok
+                          ? t(lang, 'صدای هشدار خبر پخش شد', 'News alert chime played')
+                          : t(lang, 'مرورگر دسترسی صدا را مسدود کرد', 'Audio blocked by browser'),
+                        ok ? 'info' : 'error'
+                      );
+                    }}
+                    className="min-h-[34px] px-3 py-1 rounded-xl border border-[var(--ft-border-strong)] hover:bg-[var(--ft-surface-hover)] text-xs font-medium cursor-pointer"
+                  >
+                    {t(lang, 'تست صدا', 'Test Sound')}
+                  </button>
+                </div>
+              </div>
+
+              <div className="divide-y divide-[var(--ft-border)]">
+              {state.economicEvents.map((ev) => {
+                const evDate = new Date(ev.timestamp);
+                const nowDate = new Date();
+                const isTodayEv =
+                  !Number.isNaN(evDate.getTime()) &&
+                  evDate.getFullYear() === nowDate.getFullYear() &&
+                  evDate.getMonth() === nowDate.getMonth() &&
+                  evDate.getDate() === nowDate.getDate();
+                return (
                 <div key={ev.id} className="py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div className="space-y-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {isTodayEv && (
+                        <span className="px-2 py-0.5 rounded-full bg-[var(--ft-accent-soft)] text-[var(--ft-accent)] text-[10px] font-semibold">
+                          {t(lang, 'امروز (در اعلان)', 'Today (Alerted)')}
+                        </span>
+                      )}
                       <span className="font-num text-xs font-semibold text-[var(--ft-accent)]">
                         {ev.currency}
                       </span>
@@ -1709,7 +1991,9 @@ export const TradingView: React.FC<TradingViewProps> = ({
                     </button>
                   </div>
                 </div>
-              ))}
+                );
+              })}
+              </div>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

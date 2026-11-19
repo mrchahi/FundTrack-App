@@ -213,6 +213,10 @@ export interface PanelCopilotSnapshot {
       progressPct: number;
       priority: number;
       weeklyBudget: number;
+      deadlineMode: string;
+      targetDate: string;
+      budgetSource: string;
+      sourceAccountName?: string;
     }>;
     xpTotal: number;
     streakDays: number;
@@ -568,6 +572,12 @@ export function buildAssistantPanelSnapshot(state: FundTrackState): PanelCopilot
         progressPct: g.targetAmount > 0 ? Math.round((g.savedAmount / g.targetAmount) * 100) : 0,
         priority: g.priority,
         weeklyBudget: g.weeklyBudgetAmount,
+        deadlineMode: g.deadlineMode ?? 'dated',
+        targetDate: formatJalaliDate(g.targetDate, 'fa'),
+        budgetSource: g.budgetSource,
+        sourceAccountName: g.sourceAccountId
+          ? state.bankAccounts.find((a) => a.id === g.sourceAccountId)?.name
+          : undefined,
       })),
       xpTotal: state.gamification.xpTotal,
       streakDays: state.gamification.streakDays,

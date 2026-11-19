@@ -4,11 +4,13 @@ import {
   AssistantChatMode,
   AssistantMemoryItem,
   AssistantThread,
+  BankAccount,
   BankAccountType,
   CreditProvider,
   CurrencyCode,
   FundTrackState,
   GoalBudgetSource,
+  GoalDeadlineMode,
   GoalKind,
   GoalStatus,
   LoanKind,
@@ -18,7 +20,7 @@ import {
   PersonRole,
 } from '../types';
 import { buildAssistantPanelSnapshot, buildLocalStatisticalBrief, PanelCopilotSnapshot } from './assistantAnalytics';
-import { toLocalIsoDate } from './jalali';
+import { addJalaliMonths, formatJalaliDate, toLocalIsoDate } from './jalali';
 import {
   extractAmountAndCurrency,
   extractJsonFromLlmText,
@@ -257,13 +259,14 @@ function buildCopilotSystemInstruction(
     'CRITICAL DISTINCTION & TITLE/DESCRIPTION ACCURACY RULES:',
     '1. NEVER confuse defining/opening an entity with logging a transaction, and NEVER confuse "دوست دارم ..." ("I want / would like...") with adding a friend ("add_person")!',
     '   - "دوست دارم یه گوشی بخرم S26 میتونی توی اهداف ثبت کنی" -> ALWAYS "add_goal" with goalKind="item", goalTitle="خرید گوشی S26", targetAmount=0 (unless price given)!',
+    '   - "هدف : دوست دارم به درآمد 1000 دلار برسم تا 3 ماهه دیگه خیلی برام مهمه" -> ALWAYS "add_goal" with goalKind="monetary", goalTitle="درآمد $1,000", targetAmount=1000, currency="USD", priority=1, deadlineMode="dated", targetDate=(3 months ahead YYYY-MM-DD)!',
     '   - "از دیجی‌پی اعتبار ۱۵ میلیونی ۴ قسطه دارم، خط اعتبار باز کن" -> ALWAYS "add_credit_line" (NOT add_transaction)!',
     '   - "حساب بلوبانک با موجودی ۱۰ میلیون اضافه کن" -> ALWAYS "add_bank_account"!',
     '   - "وام ۴۰ میلیونی ۱۰ قسطه ثبت کن" -> ALWAYS "add_loan"!',
     '   - "شخص رضا را اضافه کن" -> ALWAYS "add_person"!',
     '2. TITLE & DESCRIPTION PRECISION (MANDATORY):',
-    '   - Extract clean, crisp 2-5 word Persian/English titles (e.g. "خرید گوشی S26", "خرید قهوه", "اعتبار دیجی‌پی", "وام خودرو").',
-    '   - NEVER copy filler phrases like "دوست دارم", "میتونی ثبت کنی", "برام اضافه کن", "توی اهداف" into goalTitle, name, loanTitle, expenseTitle, or note!',
+    '   - Extract clean, crisp 2-4 word Persian/English titles (e.g. "خرید گوشی S26", "درآمد $1,000", "خرید قهوه", "اعتبار دیجی‌پی", "وام خودرو").',
+    '   - NEVER copy filler, deadline phrases ("تا ۳ ماهه دیگه"), importance ("خیلی برام مهمه"), or verbs ("دوست دارم", "برسم", "میتونی ثبت کنی") into goalTitle, name, loanTitle, expenseTitle, or note!',
     '3. CLARIFICATION FIRST ("mode": "clarify"):',
     '   If essential fields for a transaction/loan are missing or ambiguous, set "mode": "clarify", ask 1-2 short targeted questions, and populate "quickReplies" with concrete choices. For goals without an amount, you may propose "add_goal" with targetAmount=0 so the user can fill the price directly in the preview card.',
     '4. QUANTITATIVE & STATISTICAL ANALYSIS ("mode": "analysis"):',
@@ -522,17 +525,75 @@ function normalizeActionFromJson(
   }
 
   if (kind === 'add_goal') {
-    const goalTitle = String(rawAction.goalTitle || '').trim();
+    const cleanFallback = extractCleanGoalDraft(userMessage, lang);
+    const rawGoalTitle = typeof rawAction.goalTitle === 'string' ? rawAction.goalTitle.trim() : '';
+    const goalTitle =
+      rawGoalTitle && !/(تا\s*\d+\s*ماه|خیلی برام مهمه|دوست دارم|برسم)/.test(rawGoalTitle)
+        ? rawGoalTitle
+        : cleanFallback.goalTitle;
     const rawTarget = Number(rawAction.targetAmount);
-    const targetAmount = Number.isFinite(rawTarget) && rawTarget > 0 ? rawTarget : 0;
+    const { amount: msgAmt } = extractAmountAndCurrency(normalizeDigitsAndSeparators(userMessage));
+    const targetAmount =
+      Number.isFinite(rawTarget) && rawTarget > 0 ? rawTarget : msgAmt > 0 ? msgAmt : 0;
     if (!goalTitle) return undefined;
+
     const currency: CurrencyCode = rawAction.currency === 'USD' ? 'USD' : 'IRT';
-    const priority = Math.min(5, Math.max(1, Math.round(Number(rawAction.priority) || 2)));
+    const inferredPrio = extractGoalPriority(userMessage);
+    const rawPrio = Number(rawAction.priority);
+    const priority =
+      Number.isFinite(rawPrio) && rawPrio >= 1 && rawPrio <= 5
+        ? Math.min(Math.round(rawPrio), inferredPrio)
+        : inferredPrio;
+
+    const inferredDeadline = extractGoalDeadline(userMessage);
+    const deadlineMode: GoalDeadlineMode =
+      rawAction.deadlineMode === 'open_until_funded'
+        ? 'open_until_funded'
+        : rawAction.deadlineMode === 'dated'
+        ? 'dated'
+        : inferredDeadline.deadlineMode;
+
+    const rawTargetDate =
+      typeof rawAction.targetDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(rawAction.targetDate.trim())
+        ? rawAction.targetDate.trim().slice(0, 10)
+        : undefined;
+    const targetDate =
+      deadlineMode === 'dated'
+        ? rawTargetDate || inferredDeadline.targetDate || toLocalIsoDate(addJalaliMonths(new Date(), 3))
+        : undefined;
+
+    const weeksToDeadline =
+      deadlineMode === 'dated' && targetDate
+        ? Math.max(1, Math.round((new Date(`${targetDate}T12:00:00`).getTime() - Date.now()) / (7 * 86400000)))
+        : 12;
+
+    const inferredBudget = extractGoalBudgetSource(userMessage, state.bankAccounts);
+    const allowedSources: GoalBudgetSource[] = ['weekly_budget', 'trading_profit', 'bank_savings'];
+    const budgetSource: GoalBudgetSource = allowedSources.includes(rawAction.budgetSource as GoalBudgetSource)
+      ? (rawAction.budgetSource as GoalBudgetSource)
+      : inferredBudget.budgetSource;
+    const sourceAccountId =
+      budgetSource === 'bank_savings'
+        ? state.bankAccounts.find((a) => a.id === rawAction.sourceAccountId)?.id ||
+          inferredBudget.sourceAccountId ||
+          state.bankAccounts.find((a) => a.currency === currency)?.id ||
+          state.bankAccounts[0]?.id
+        : undefined;
+
+    const rawWeekly = Number(rawAction.weeklyBudgetAmount);
     const weeklyBudgetAmount =
       targetAmount > 0
-        ? Math.max(0, Number(rawAction.weeklyBudgetAmount) || Math.round(targetAmount / 12))
+        ? Number.isFinite(rawWeekly) && rawWeekly > 0
+          ? Math.round(rawWeekly)
+          : Math.max(1, Math.round(targetAmount / weeksToDeadline))
         : 0;
-    const goalKind: GoalKind = rawAction.goalKind === 'item' ? 'item' : 'monetary';
+    const goalKind: GoalKind =
+      rawAction.goalKind === 'item'
+        ? 'item'
+        : rawAction.goalKind === 'monetary'
+        ? 'monetary'
+        : cleanFallback.goalKind;
+
     return {
       kind: 'add_goal',
       title:
@@ -543,7 +604,10 @@ function normalizeActionFromJson(
       targetAmount,
       currency,
       goalKind,
-      budgetSource: rawAction.budgetSource === 'trading_profit' ? 'trading_profit' : 'weekly_budget',
+      deadlineMode,
+      targetDate,
+      budgetSource,
+      sourceAccountId,
       weeklyBudgetAmount,
       priority,
       activateImmediately: rawAction.activateImmediately !== false,
@@ -783,6 +847,127 @@ function stripAmountPhrases(rawText: string): string {
     .replace(/(?<![a-zA-Z])\d{5,}(?:\.\d+)?(?![a-zA-Z])/g, ' ');
 }
 
+function extractGoalPriority(rawText: string): number {
+  const norm = normalizeDigitsAndSeparators(rawText);
+  const lower = norm.toLowerCase();
+  const explicitMatch = norm.match(/(?:با\s+)?اولویت\s*(\d+)/);
+  if (explicitMatch) {
+    return Math.min(5, Math.max(1, Number(explicitMatch[1])));
+  }
+  if (/(خیلی\s+(?:برام\s+)?مهم|بسیار\s+مهم|حیاتی|فوری|اضطراری|critical|urgent|top priority|very important)/i.test(lower)) {
+    return 1;
+  }
+  if (/(مهمه|مهم\s+است|برام\s+مهم|اولویت\s+بالا|important|high priority)/i.test(lower)) {
+    return 2;
+  }
+  if (/(عجله\s+ندارم|آتی|اولویت\s+کم|بلندمدت|low priority|someday)/i.test(lower)) {
+    return 4;
+  }
+  return 2;
+}
+
+function extractGoalDeadline(rawText: string): {
+  deadlineMode: GoalDeadlineMode;
+  targetDate?: string;
+  weeksEstimate: number;
+} {
+  const norm = normalizeDigitsAndSeparators(rawText);
+  const lower = norm.toLowerCase();
+
+  if (/(باز\s*تا\s*(?:تامین|تأمین)|تا\s*(?:تامین|تأمین)\s*(?:کامل\s*)?بودجه|بدون\s*سررسید|بدون\s*تاریخ|باز\s*باشه|open\s*until\s*funded|no\s*deadline)/i.test(lower)) {
+    return { deadlineMode: 'open_until_funded', targetDate: undefined, weeksEstimate: 12 };
+  }
+
+  const now = new Date();
+  const monthMatch = norm.match(/(?:تا|ظرف|حداکثر|در\s*مدت|برای)?\s*(\d+)\s*(?:ماهه|ماه)\s*(?:دیگه|دیگر|آینده|بعد)?/i);
+  if (monthMatch) {
+    const months = Math.min(120, Math.max(1, Number(monthMatch[1])));
+    const target = addJalaliMonths(now, months);
+    return {
+      deadlineMode: 'dated',
+      targetDate: toLocalIsoDate(target),
+      weeksEstimate: Math.max(4, Math.round(months * 4.33)),
+    };
+  }
+
+  const weekMatch = norm.match(/(?:تا|ظرف|حداکثر|برای)?\s*(\d+)\s*هفته\s*(?:دیگه|دیگر|آینده|بعد)?/i);
+  if (weekMatch) {
+    const weeks = Math.min(260, Math.max(1, Number(weekMatch[1])));
+    const target = new Date(now.getTime() + weeks * 7 * 86400000);
+    return {
+      deadlineMode: 'dated',
+      targetDate: toLocalIsoDate(target),
+      weeksEstimate: weeks,
+    };
+  }
+
+  const dayMatch = norm.match(/(?:تا|ظرف|حداکثر|برای)?\s*(\d+)\s*روز\s*(?:دیگه|دیگر|آینده|بعد)?/i);
+  if (dayMatch) {
+    const days = Math.min(1800, Math.max(1, Number(dayMatch[1])));
+    const target = new Date(now.getTime() + days * 86400000);
+    return {
+      deadlineMode: 'dated',
+      targetDate: toLocalIsoDate(target),
+      weeksEstimate: Math.max(1, Math.ceil(days / 7)),
+    };
+  }
+
+  const yearMatch = norm.match(/(?:تا|ظرف|حداکثر|برای)?\s*(\d+)\s*(?:ساله|سال)\s*(?:دیگه|دیگر|آینده|بعد)?/i);
+  if (yearMatch) {
+    const years = Math.min(15, Math.max(1, Number(yearMatch[1])));
+    const target = addJalaliMonths(now, years * 12);
+    return {
+      deadlineMode: 'dated',
+      targetDate: toLocalIsoDate(target),
+      weeksEstimate: years * 52,
+    };
+  }
+
+  return {
+    deadlineMode: 'dated',
+    targetDate: toLocalIsoDate(addJalaliMonths(now, 3)),
+    weeksEstimate: 13,
+  };
+}
+
+function extractGoalBudgetSource(
+  rawText: string,
+  accounts: BankAccount[]
+): { budgetSource: GoalBudgetSource; sourceAccountId?: string } {
+  const lower = normalizeDigitsAndSeparators(rawText).toLowerCase();
+
+  for (const acc of accounts) {
+    const cleanName = acc.name.toLowerCase().trim();
+    if (cleanName && lower.includes(cleanName)) {
+      return { budgetSource: 'bank_savings', sourceAccountId: acc.id };
+    }
+  }
+
+  if (/(سود\s*ترید|سود\s*معاملات|ترید|اکسپرت|trading\s*profit|mt5)/i.test(lower)) {
+    return { budgetSource: 'trading_profit' };
+  }
+  if (/(از\s*حساب|پس.?انداز\s*بانکی|حساب\s*بانکی|بانک|کارت|bank\s*savings)/i.test(lower)) {
+    return {
+      budgetSource: 'bank_savings',
+      sourceAccountId: accounts[0]?.id,
+    };
+  }
+  return { budgetSource: 'weekly_budget' };
+}
+
+function stripGoalMetadataPhrases(rawText: string): string {
+  return normalizeDigitsAndSeparators(rawText)
+    .replace(/^(?:هدف\s*[:：]\s*)/i, ' ')
+    .replace(/(?:با\s+)?اولویت\s*\d+/gi, ' ')
+    .replace(/(?:باز\s*تا\s*(?:تامین|تأمین)\s*(?:کامل\s*)?بودجه|بدون\s*سررسید|بدون\s*تاریخ)/gi, ' ')
+    .replace(/(?:تا|ظرف|حداکثر|در\s*مدت)?\s*\d+\s*(?:ماهه|ماه|هفته|روز|ساله|سال)\s*(?:دیگه|دیگر|آینده|بعد)?/gi, ' ')
+    .replace(/(?:خیلی|بسیار)?\s*(?:برام\s+)?مهم(?:ه|\s*است)?/gi, ' ')
+    .replace(/(?:از\s+محل|از\s+منبع|منبع(?:\s+تامین)?(?:\s+بودجه)?)\s+[^\n،.]+/gi, ' ')
+    .replace(/(?:با\s+)?(?:استخر\s+)?بودجه\s*(?:هفتگی|هدف)|(?:از\s+)?سود\s*(?:ترید|معاملات)|(?:از\s+)?پس.?انداز\s+بانکی/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function extractCleanGoalDraft(
   userText: string,
   lang: 'fa' | 'en'
@@ -793,10 +978,11 @@ function extractCleanGoalDraft(
       lower
     );
   const goalKind: GoalKind = isPurchaseIntent ? 'item' : 'monetary';
+  const { amount: parsedAmt, currency: parsedCurrency } = extractAmountAndCurrency(
+    normalizeDigitsAndSeparators(userText)
+  );
 
-  let cleaned = stripAmountPhrases(userText)
-    .replace(/(?:با\s+)?اولویت\s*\d+/gi, ' ')
-    .trim();
+  let cleaned = stripGoalMetadataPhrases(stripAmountPhrases(userText));
 
   const stopWords = [
     'سلام', 'درود', 'لطفاً', 'لطفا', 'میتونی', 'می‌تونی', 'می‌تونم', 'میتونم', 'میشه', 'می‌شه',
@@ -805,15 +991,26 @@ function extractCleanGoalDraft(
     'توی هدف', 'به عنوان هدف', 'به لیست اهداف', 'هدف جدید', 'هدف مالی', 'هدف', 'اهداف',
     'ثبت کنی', 'ثبت کن', 'ثبتش کن', 'ثبت کنم', 'اضافه کنی', 'اضافه کن', 'اضافه‌اش کن',
     'تعریف کنی', 'تعریف کن', 'بساز', 'بسازی', 'ایجاد کن', 'بگذار', 'بذار', 'جدید',
-    'بخرم', 'بگیرم', 'تهیه کنم', 'جمع کنم', 'پس‌انداز کنم', 'پس انداز کنم',
+    'برسم', 'در بیارم', 'دربیارم', 'داشته باشم', 'جمع کنم', 'پس‌انداز کنم', 'پس انداز کنم',
+    'بخرم', 'بگیرم', 'تهیه کنم', 'دیگه', 'دیگر', 'آینده', 'خیلی', 'بسیار', 'حیاتی', 'فوری',
     'میلیارد', 'میلیونی', 'میلیون', 'ملیون', 'هزار', 'تومانی', 'تومنی', 'تومان', 'تومن', 'دلاری', 'دلار', 'تتر',
     'مبلغ', 'قیمت', 'حدود', 'تقریبی', 'تخمینی', 'به مبلغ', 'با مبلغ', 'با قیمت',
-    'یه', 'یک', 'این', 'اون', 'را', 'رو', 'به', 'در', 'توی', 'تو', 'با', 'برای', 'که', 'و',
+    'یه', 'یک', 'این', 'اون', 'را', 'رو', 'به', 'در', 'توی', 'تو', 'با', 'برای', 'که', 'و', 'تا',
     'goal', 'goals', 'create', 'add', 'save', 'new', 'want', 'to', 'buy', 'a', 'an', 'in', 'my',
   ];
 
   cleaned = stripBoundaryWords(cleaned, stopWords);
   if (!cleaned || cleaned.length < 2) {
+    if (parsedAmt > 0 && !isPurchaseIntent) {
+      const formattedAmt =
+        parsedCurrency === 'USD'
+          ? `$${parsedAmt.toLocaleString('en-US')}`
+          : `${parsedAmt.toLocaleString('en-US')} تومان`;
+      return {
+        goalTitle: lang === 'fa' ? `هدف مالی ${formattedAmt}` : `Financial Goal ${formattedAmt}`,
+        goalKind,
+      };
+    }
     return {
       goalTitle: lang === 'fa' ? 'هدف مالی جدید' : 'New Financial Goal',
       goalKind,
@@ -822,7 +1019,19 @@ function extractCleanGoalDraft(
 
   if (goalKind === 'item' && lang === 'fa' && !/^(خرید|تهیه)\s+/.test(cleaned)) {
     cleaned = `خرید ${cleaned}`;
+  } else if (
+    goalKind === 'monetary' &&
+    lang === 'fa' &&
+    parsedAmt > 0 &&
+    /^(درآمد|سود|پس.?انداز|سرمایه|تارگت)$/.test(cleaned)
+  ) {
+    const formattedAmt =
+      parsedCurrency === 'USD'
+        ? `$${parsedAmt.toLocaleString('en-US')}`
+        : `${parsedAmt.toLocaleString('en-US')} تومان`;
+    cleaned = `${cleaned} ${formattedAmt}`;
   }
+
   const finalTitle = cleaned.length > 44 ? `${cleaned.slice(0, 44).trim()}…` : cleaned;
   return { goalTitle: finalTitle, goalKind };
 }
@@ -978,25 +1187,35 @@ function runLocalOfflineCopilotFallback(
     };
   }
 
-  // 3) Goal creation (Check BEFORE Add Person so "دوست دارم گوشی بخرم توی اهداف ثبت کنی" ALWAYS hits Goal!)
+  // 3) Goal creation (Check BEFORE Add Person & Expense so aspirational buy/reach goals ALWAYS hit Goal!)
   const isGoalCreateIntent =
-    /(هدف|اهداف|goal|goals)/.test(lower) &&
-    /(ثبت|بساز|تعریف|اضافه|ایجاد|بذار|بگذار|جدید|دوست دارم|میخوام|می‌خوام|میخواهم|create|add|save)/.test(lower) &&
-    !/(به هدف|برای هدف)\s+.*(واریز|اختصاص|پس.?انداز)/.test(lower);
+    !/(به هدف|برای هدف)\s+.*(واریز|اختصاص|پس.?انداز)/.test(lower) &&
+    ((/(هدف|اهداف|goal|goals)/.test(lower) &&
+      /(ثبت|بساز|تعریف|اضافه|ایجاد|بذار|بگذار|جدید|دوست دارم|میخوام|می‌خوام|میخواهم|create|add|save)/.test(lower)) ||
+      (/(دوست دارم|قصد دارم|برنامه دارم|آرزو دارم|می‌خواهم|میخوام)/.test(lower) &&
+        /(بخرم|برسم|تهیه کنم|جمع کنم)/.test(lower) &&
+        !/(خریدم|پرداخت کردم|واریز کردم|خرج کردم|حساب کردم)/.test(lower) &&
+        (/(بودجه|سررسید|مهمه|اولویت|ماه|هفته|سال|دلار|تومن|تومان)/.test(lower))));
 
   if (isGoalCreateIntent) {
     const { goalTitle, goalKind } = extractCleanGoalDraft(userText, lang);
-    const prioMatch = norm.match(/(?:با\s+)?اولویت\s*(\d+)/);
-    const goalPriority = prioMatch ? Math.min(5, Math.max(1, Number(prioMatch[1]))) : 2;
-    const weeklyBudgetAmount = parsedAmt > 0 ? Math.round(parsedAmt / 12) : 0;
+    const goalPriority = extractGoalPriority(userText);
+    const { deadlineMode, targetDate, weeksEstimate } = extractGoalDeadline(userText);
+    const { budgetSource, sourceAccountId } = extractGoalBudgetSource(userText, state.bankAccounts);
+    const weeklyBudgetAmount = parsedAmt > 0 ? Math.max(1, Math.round(parsedAmt / weeksEstimate)) : 0;
+
+    const deadlineSummaryFa =
+      deadlineMode === 'open_until_funded'
+        ? 'باز تا تأمین کامل بودجه'
+        : `سررسید ${targetDate ? formatJalaliDate(targetDate, 'fa') : 'تعیین‌شده'}`;
 
     return {
       mode: 'propose_action',
       reply:
         parsedAmt > 0
           ? lang === 'fa'
-            ? `پیش‌نویس ${goalKind === 'item' ? 'هدف خرید' : 'هدف مالی'} «${goalTitle}» آماده شد؛ بررسی و تأیید کنید:`
-            : `Draft ready for goal "${goalTitle}" — review and confirm:`
+            ? `پیش‌نویس ${goalKind === 'item' ? 'هدف خرید' : 'هدف مالی'} «${goalTitle}» با اولویت P${goalPriority} (${deadlineSummaryFa}) آماده شد؛ بررسی و تأیید کنید:`
+            : `Draft ready for "${goalTitle}" (P${goalPriority}, ${deadlineMode}) — review and confirm:`
           : lang === 'fa'
           ? `پیش‌نویس هدف «${goalTitle}» با عنوان دقیق آماده شد؛ مبلغ تخمینی هدف را وارد کرده و تأیید کنید:`
           : `Draft ready for "${goalTitle}" — enter target amount below and confirm:`,
@@ -1012,7 +1231,10 @@ function runLocalOfflineCopilotFallback(
         targetAmount: parsedAmt > 0 ? parsedAmt : 0,
         currency: parsedCurrency,
         goalKind,
-        budgetSource: 'weekly_budget',
+        deadlineMode,
+        targetDate,
+        budgetSource,
+        sourceAccountId,
         weeklyBudgetAmount,
         priority: goalPriority,
         activateImmediately: true,

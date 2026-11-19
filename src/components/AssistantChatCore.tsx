@@ -1021,6 +1021,24 @@ export const AssistantChatCore: React.FC<AssistantChatCoreProps> = ({
             : m
         );
 
+      const budgetSourceLabel =
+        act.budgetSource === 'trading_profit'
+          ? t(lang, 'سود معاملات و اکسپرت', 'Trading Profit')
+          : act.budgetSource === 'bank_savings'
+          ? `${t(lang, 'پس‌انداز بانکی', 'Bank Savings')}${
+              act.sourceAccountId
+                ? ` (${state.bankAccounts.find((a) => a.id === act.sourceAccountId)?.name ?? '—'})`
+                : ''
+            }`
+          : t(lang, 'بودجه هفتگی و درآمد', 'Weekly Budget');
+
+      const deadlineSummary =
+        act.deadlineMode === 'open_until_funded'
+          ? t(lang, 'باز تا تأمین کامل بودجه', 'Open Until Funded')
+          : act.targetDate
+          ? formatJalaliDate(act.targetDate, lang)
+          : t(lang, 'سررسید مشخص', 'Dated');
+
       return (
         <div className="rounded-xl bg-[var(--ft-surface-solid)]/80 border border-[var(--ft-border-strong)] p-3 space-y-2.5">
           <div className="flex items-center gap-2 text-xs font-bold text-[var(--ft-text-primary)]">
@@ -1044,19 +1062,31 @@ export const AssistantChatCore: React.FC<AssistantChatCoreProps> = ({
               </span>
             </div>
             <div>
-              <span className="text-[var(--ft-text-muted)] block">{t(lang, 'نوع', 'Kind')}</span>
+              <span className="text-[var(--ft-text-muted)] block">{t(lang, 'شرط سررسید', 'Deadline')}</span>
+              <span className="font-medium text-[var(--ft-text-secondary)]">
+                {deadlineSummary}
+              </span>
+            </div>
+            <div>
+              <span className="text-[var(--ft-text-muted)] block">{t(lang, 'منبع تأمین', 'Funding Source')}</span>
+              <span className="font-medium text-[var(--ft-text-secondary)] truncate block">
+                {budgetSourceLabel}
+              </span>
+            </div>
+            <div>
+              <span className="text-[var(--ft-text-muted)] block">{t(lang, 'نوع هدف', 'Kind')}</span>
               <span className="font-medium text-[var(--ft-text-secondary)]">
                 {act.goalKind === 'item'
-                  ? t(lang, 'خرید کالا / هدف عینی', 'Purchase Item')
+                  ? t(lang, 'خرید کالا / عینی', 'Purchase Item')
                   : t(lang, 'هدف مالی / نقدی', 'Monetary Goal')}
               </span>
             </div>
             <div>
-              <span className="text-[var(--ft-text-muted)] block">{t(lang, 'اولویت و وضعیت', 'Priority & Status')}</span>
+              <span className="text-[var(--ft-text-muted)] block">{t(lang, 'اولویت و بودجه هفتگی', 'Priority & Weekly')}</span>
               <span className="font-medium text-[var(--ft-text-secondary)]">
                 P{act.priority}
                 {act.weeklyBudgetAmount > 0
-                  ? ` · ${formatMoney(act.weeklyBudgetAmount, act.currency, lang, true, isPrivate)}`
+                  ? ` · ${formatMoney(act.weeklyBudgetAmount, act.currency, lang, true, isPrivate)}/w`
                   : ''}
                 {act.activateImmediately !== false ? ` (${t(lang, 'فعال', 'Active')})` : ''}
               </span>
@@ -1064,7 +1094,7 @@ export const AssistantChatCore: React.FC<AssistantChatCoreProps> = ({
           </div>
 
           {msg.editingAction && (
-            <div className="pt-2 border-t border-[var(--ft-border)] space-y-2">
+            <div className="pt-2 border-t border-[var(--ft-border)] space-y-2.5">
               <MaterialInput
                 type="text"
                 fieldSize="sm"
@@ -1106,6 +1136,103 @@ export const AssistantChatCore: React.FC<AssistantChatCoreProps> = ({
                   />
                 </div>
               </div>
+
+              <div className="space-y-1.5 p-2 rounded-lg bg-[var(--ft-surface-subtle)] border border-[var(--ft-border)]">
+                <span className="text-[11px] font-semibold text-[var(--ft-text-secondary)] block">
+                  {t(lang, 'شرط سررسید هدف', 'Deadline Condition')}
+                </span>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      patchGoal({
+                        deadlineMode: 'dated',
+                        targetDate: act.targetDate || toLocalIsoDate(new Date(Date.now() + 90 * 86400000)),
+                      })
+                    }
+                    className={`py-1.5 px-2 text-[11px] rounded-md border cursor-pointer ${
+                      act.deadlineMode !== 'open_until_funded'
+                        ? 'ft-accent-gradient border-transparent font-semibold'
+                        : 'border-[var(--ft-border)] text-[var(--ft-text-secondary)]'
+                    }`}
+                  >
+                    {t(lang, 'تعیین تاریخ سررسید', 'Target Date')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => patchGoal({ deadlineMode: 'open_until_funded', targetDate: undefined })}
+                    className={`py-1.5 px-2 text-[11px] rounded-md border cursor-pointer ${
+                      act.deadlineMode === 'open_until_funded'
+                        ? 'ft-accent-gradient border-transparent font-semibold'
+                        : 'border-[var(--ft-border)] text-[var(--ft-text-secondary)]'
+                    }`}
+                  >
+                    {t(lang, 'باز تا تأمین بودجه', 'Open Until Funded')}
+                  </button>
+                </div>
+                {act.deadlineMode !== 'open_until_funded' && (
+                  <JalaliDatePicker
+                    lang={lang}
+                    fieldSize="sm"
+                    label={t(lang, 'تاریخ سررسید', 'Target Date')}
+                    value={act.targetDate || toLocalIsoDate(new Date(Date.now() + 90 * 86400000))}
+                    onChange={(iso) => patchGoal({ targetDate: iso })}
+                  />
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="md-field">
+                  <label className="md-field-label">{t(lang, 'منبع تأمین بودجه', 'Funding Source')}</label>
+                  <GlassSelect<'weekly_budget' | 'trading_profit' | 'bank_savings'>
+                    size="sm"
+                    className="w-full"
+                    value={act.budgetSource}
+                    onChange={(bs) =>
+                      patchGoal({
+                        budgetSource: bs,
+                        sourceAccountId:
+                          bs === 'bank_savings'
+                            ? act.sourceAccountId || state.bankAccounts[0]?.id
+                            : undefined,
+                      })
+                    }
+                    options={[
+                      { value: 'weekly_budget', label: t(lang, 'بودجه هفتگی و درآمد', 'Weekly Budget') },
+                      { value: 'trading_profit', label: t(lang, 'سود معاملات و اکسپرت', 'Trading Profit') },
+                      { value: 'bank_savings', label: t(lang, 'حساب بانکی پس‌انداز', 'Bank Savings') },
+                    ]}
+                  />
+                </div>
+                {act.budgetSource === 'bank_savings' && state.bankAccounts.length > 0 ? (
+                  <div className="md-field">
+                    <label className="md-field-label">{t(lang, 'حساب مبدأ', 'Source Account')}</label>
+                    <GlassSelect<string>
+                      size="sm"
+                      className="w-full"
+                      value={act.sourceAccountId || state.bankAccounts[0]?.id || ''}
+                      onChange={(id) => patchGoal({ sourceAccountId: id })}
+                      options={state.bankAccounts.map((a) => ({
+                        value: a.id,
+                        label: `${a.name} (${a.currency})`,
+                      }))}
+                    />
+                  </div>
+                ) : (
+                  <MaterialInput
+                    type="number"
+                    fieldSize="sm"
+                    step="any"
+                    ltrNum
+                    label={t(lang, 'سهم بودجه هفتگی', 'Weekly Budget')}
+                    value={act.weeklyBudgetAmount > 0 ? String(act.weeklyBudgetAmount) : ''}
+                    onChange={(e) =>
+                      patchGoal({ weeklyBudgetAmount: Math.max(0, Number(e.target.value) || 0) })
+                    }
+                  />
+                )}
+              </div>
+
               <div className="grid grid-cols-2 gap-2">
                 <div className="md-field">
                   <label className="md-field-label">{t(lang, 'نوع هدف', 'Goal Kind')}</label>
@@ -1857,13 +1984,13 @@ export const AssistantChatCore: React.FC<AssistantChatCoreProps> = ({
               </div>
 
               {isLatestAssistant && !analyzing && msg.quickReplies && msg.quickReplies.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 max-w-[95%]">
+                <div className="flex sm:flex-wrap gap-1.5 max-w-full overflow-x-auto no-scrollbar pb-0.5">
                   {msg.quickReplies.map((qr) => (
                     <button
                       key={qr}
                       type="button"
                       onClick={() => void handleSend(qr)}
-                      className="px-2.5 py-1.5 rounded-xl border border-[var(--ft-border-strong)] bg-[var(--ft-surface-solid)]/70 hover:border-[var(--ft-accent)] text-[11px] text-[var(--ft-text-secondary)] hover:text-[var(--ft-text-primary)] transition-colors cursor-pointer text-start"
+                      className="min-h-[36px] px-3 py-1.5 rounded-xl border border-[var(--ft-border-strong)] bg-[var(--ft-surface-solid)]/70 hover:border-[var(--ft-accent)] text-[11px] text-[var(--ft-text-secondary)] hover:text-[var(--ft-text-primary)] transition-colors cursor-pointer text-start whitespace-nowrap shrink-0"
                     >
                       {qr}
                     </button>
@@ -1892,16 +2019,16 @@ export const AssistantChatCore: React.FC<AssistantChatCoreProps> = ({
           e.preventDefault();
           void handleSend();
         }}
-        className={`${compact ? 'p-3' : 'p-4'} border-t border-[var(--ft-border)] bg-[var(--ft-surface-solid)]/60 shrink-0`}
+        className={`${compact ? 'p-3' : 'p-2.5 sm:p-4'} border-t border-[var(--ft-border)] bg-[var(--ft-surface-solid)]/60 shrink-0`}
       >
         <div
-          className={`rounded-2xl border border-[var(--ft-border-strong)] bg-[var(--ft-surface-subtle)] px-3.5 pt-3 pb-2.5 flex flex-col gap-2 focus-within:border-[var(--ft-accent)] transition-colors ${
-            compact ? 'min-h-[96px]' : 'min-h-[112px]'
+          className={`rounded-2xl border border-[var(--ft-border-strong)] bg-[var(--ft-surface-subtle)] px-3 sm:px-3.5 pt-2.5 pb-2 flex flex-col gap-1.5 sm:gap-2 focus-within:border-[var(--ft-accent)] transition-colors ${
+            compact ? 'min-h-[92px]' : 'min-h-[82px] sm:min-h-[112px]'
           }`}
         >
           <textarea
             ref={inputRef}
-            rows={compact ? 2 : 3}
+            rows={compact ? 2 : 2}
             value={composer}
             onChange={(e) => setComposer(e.target.value)}
             onKeyDown={(e) => {
@@ -1916,7 +2043,7 @@ export const AssistantChatCore: React.FC<AssistantChatCoreProps> = ({
               'Ask for analysis or define/log anything (goal, credit line, account, transaction)...'
             )}
             className={`w-full bg-transparent text-xs sm:text-[13px] leading-relaxed text-[var(--ft-text-primary)] placeholder:text-[var(--ft-text-muted)] focus:outline-none resize-none overflow-y-auto ${
-              compact ? 'min-h-[44px] max-h-[116px]' : 'min-h-[58px] max-h-[152px]'
+              compact ? 'min-h-[44px] max-h-[116px]' : 'min-h-[42px] sm:min-h-[58px] max-h-[144px]'
             }`}
           />
 

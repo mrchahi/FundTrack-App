@@ -698,7 +698,39 @@ export const TradingRiskAndImportSection: React.FC<TradingRiskAndImportSectionPr
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            {/* Mobile Cards (< sm) */}
+            <div className="sm:hidden space-y-2">
+              {csvPreview.rows.slice(0, 8).map(({ trade, isDuplicate }) => (
+                <div
+                  key={`mob_csv_${trade.id}`}
+                  className={`p-3 rounded-2xl glass-tile space-y-1.5 text-xs ${isDuplicate ? 'opacity-55' : ''}`}
+                >
+                  <div className="flex items-center justify-between gap-2 font-num">
+                    <span className="font-semibold text-[var(--ft-text-primary)]">
+                      {trade.symbol} · {trade.direction} ({trade.volume})
+                    </span>
+                    <span
+                      className={`font-bold ${
+                        trade.profitUsd >= 0 ? 'text-[var(--ft-positive)]' : 'text-[var(--ft-danger)]'
+                      }`}
+                    >
+                      {formatUsdInline(trade.profitUsd, isPrivate)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 text-[11px]">
+                    <span className="font-num text-[var(--ft-text-muted)]">
+                      #{maskText(trade.ticket, isPrivate)} · {formatJalaliDateTime(trade.closeTime, lang)}
+                    </span>
+                    <span className={isDuplicate ? 'text-[var(--ft-warning)] font-medium' : 'text-[var(--ft-positive)] font-medium'}>
+                      {isDuplicate ? t(lang, 'تکراری', 'Duplicate') : t(lang, 'جدید', 'Ready')}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop Table (>= sm) */}
+            <div className="hidden sm:block overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
                   <tr className="text-[var(--ft-text-muted)] border-b border-[var(--ft-border)]">

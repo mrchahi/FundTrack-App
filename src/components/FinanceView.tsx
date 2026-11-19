@@ -69,6 +69,12 @@ import {
 import { GlassSelect, GlassSwitch } from './GlassControls';
 import { MaterialInput } from './MaterialInputs';
 import { JalaliDatePicker } from './JalaliDatePicker';
+import {
+  M3AccordionCard,
+  M3CarouselItem,
+  M3SnapCarousel,
+  ResponsiveModalSheet,
+} from './M3MobilePrimitives';
 
 interface FinanceViewProps {
   state: FundTrackState;
@@ -357,12 +363,16 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [state.transactions, txTypeFilter]);
 
-  const openNewTransaction = (preset?: { paymentMethod?: PaymentMethod; creditLineId?: string }) => {
+  const openNewTransaction = (preset?: {
+    type?: TransactionType;
+    paymentMethod?: PaymentMethod;
+    creditLineId?: string;
+  }) => {
     const pm = preset?.paymentMethod ?? 'bank';
     const credId = preset?.creditLineId ?? state.creditLines?.[0]?.id ?? '';
     const cred = (state.creditLines ?? []).find((c) => c.id === credId);
     setEditingTxId(undefined);
-    setTxType('out');
+    setTxType(preset?.type ?? 'out');
     setTxPaymentMethod(pm);
     setTxCreditLineId(credId);
     setTxInstallments(String(cred?.defaultInstallments ?? 4));
@@ -743,25 +753,25 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
   const startOffset = getJalaliWeekdayIndex(calYear, calMonth, 1);
 
   return (
-    <div className="space-y-6">
-      {/* Sub-navigation */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="inline-flex flex-wrap items-center gap-1 p-1.5 rounded-2xl glass-surface">
+    <div className="space-y-4 sm:space-y-6">
+      {/* Material Design 3 Sub-navigation */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="inline-flex items-center gap-1 p-1 rounded-2xl glass-surface overflow-x-auto no-scrollbar max-w-full flex-nowrap">
           {(
             [
-              ['summary', t(lang, 'خلاصه مالی', 'Summary')],
-              ['transactions', t(lang, 'تراکنش‌ها', 'Transactions')],
+              ['summary', t(lang, 'خلاصه', 'Summary')],
+              ['transactions', t(lang, 'تراکنش‌ها', 'Ledger')],
               ['accounts', t(lang, 'حساب‌ها', 'Accounts')],
-              ['people', t(lang, 'اشخاص و حساب‌ها', 'People')],
-              ['planning', t(lang, 'اعتبارات و اقساط', 'Credits & Bills')],
-              ['fx', t(lang, 'نرخ ارز', 'FX Rate')],
+              ['people', t(lang, 'اشخاص', 'People')],
+              ['planning', t(lang, 'اعتبارات', 'Credits')],
+              ['fx', t(lang, 'نرخ ارز', 'FX')],
             ] as Array<[FinanceSubTab, string]>
           ).map(([id, label]) => (
             <button
               key={id}
               type="button"
               onClick={() => setSubTab(id)}
-              className={`px-3.5 py-2 text-xs sm:text-sm font-medium rounded-xl transition-all whitespace-nowrap shrink-0 cursor-pointer ${
+              className={`min-h-[38px] px-3.5 py-1.5 text-xs sm:text-sm font-medium rounded-xl transition-all whitespace-nowrap shrink-0 cursor-pointer ${
                 subTab === id
                   ? 'ft-accent-gradient font-semibold'
                   : 'text-[var(--ft-text-secondary)] hover:text-[var(--ft-text-primary)] hover:bg-[var(--ft-surface-hover)]'
@@ -775,10 +785,10 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
         <button
           type="button"
           onClick={() => openNewTransaction()}
-          className="px-4 py-2 text-sm font-semibold rounded-xl ft-accent-gradient cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
+          className="min-h-[38px] px-4 py-1.5 text-xs sm:text-sm font-semibold rounded-xl ft-accent-gradient cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
         >
           <Plus className="w-4 h-4" />
-          <span>{t(lang, 'ثبت تراکنش / هزینه', 'Log Transaction')}</span>
+          <span>{t(lang, 'ثبت تراکنش', 'Log Entry')}</span>
         </button>
       </div>
 
@@ -1141,389 +1151,596 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
               </div>
             </section>
 
-            {/* Visual Asset Mix & Cashflow Breakdown */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-              <section className="lg:col-span-5 relative overflow-hidden rounded-3xl p-5 sm:p-6 backdrop-blur-xl bg-[rgba(var(--ft-surface-rgb),0.44)] border border-[var(--ft-border-strong)] shadow-[var(--ft-shadow)] flex flex-col justify-between gap-5">
-                <div
-                  className="pointer-events-none absolute -top-20 -end-16 w-56 h-56 rounded-full blur-3xl opacity-20"
-                  style={{ background: 'var(--ft-accent)' }}
-                />
-
-                <div className="relative z-10 flex items-start justify-between gap-3">
-                  <div>
-                    <h3 className="text-base font-bold text-[var(--ft-text-primary)]">
-                      {t(lang, 'تراز دارایی و نقدینگی', 'Asset Balance & Liquidity')}
-                    </h3>
-                    <p className="text-xs text-[var(--ft-text-muted)] mt-0.5">
-                      {t(lang, 'شاخص‌های تومانی مجزا از دلار', 'Currency-separated health')}
-                    </p>
-                  </div>
-                  <div className="text-end shrink-0">
-                    <div className="text-[11px] text-[var(--ft-text-muted)]">
-                      {t(lang, 'پوشش بدهی', 'Coverage')}
-                    </div>
-                    <div className="font-num text-sm font-bold text-[var(--ft-positive)]">
-                      {coverageRatio}x
-                    </div>
-                  </div>
-                </div>
-
-                {/* 3 Substantial Gradient Radial Gauge Tiles */}
-                <div className="relative z-10 grid grid-cols-3 gap-3">
-                  <div className="p-3 rounded-2xl backdrop-blur-md bg-[rgba(var(--ft-surface-rgb),0.36)] border border-[var(--ft-border)] flex flex-col items-center justify-center">
-                    <RadialGauge
-                      pct={safeCashPct}
-                      label={t(lang, 'نقد آزاد', 'Safe Cash')}
-                      sublabel={formatMoney(summary.safeToSpendIrtOnly, 'IRT', lang, true, isPrivate)}
-                      color="var(--ft-accent)"
-                      gradientTo="var(--ft-accent-secondary, var(--ft-positive))"
-                      size={100}
-                      strokeWidth={9}
-                    />
-                  </div>
-                  <div className="p-3 rounded-2xl backdrop-blur-md bg-[rgba(var(--ft-surface-rgb),0.36)] border border-[var(--ft-border)] flex flex-col items-center justify-center">
-                    <RadialGauge
-                      pct={Math.max(0, summary.savingsRateIrtPct)}
-                      label={t(lang, 'نرخ پس‌انداز', 'Savings Rate')}
-                      sublabel={formatMoney(Math.max(0, netFlowIrtOnly), 'IRT', lang, true, isPrivate)}
-                      color="var(--ft-positive)"
-                      gradientTo="var(--ft-accent)"
-                      size={100}
-                      strokeWidth={9}
-                    />
-                  </div>
-                  <div className="p-3 rounded-2xl backdrop-blur-md bg-[rgba(var(--ft-surface-rgb),0.36)] border border-[var(--ft-border)] flex flex-col items-center justify-center">
-                    <RadialGauge
-                      pct={debtRatioPct}
-                      label={t(lang, 'نسبت بدهی', 'Debt Ratio')}
-                      sublabel={formatMoney(summary.totalDebtIrtOnly, 'IRT', lang, true, isPrivate)}
-                      color="var(--ft-danger)"
-                      gradientTo="var(--ft-warning)"
-                      size={100}
-                      strokeWidth={9}
-                    />
-                  </div>
-                </div>
-
-                {/* Asset Mix & Balance Distribution Footer Block (Eliminates Empty Space) */}
-                <div className="relative z-10 p-4 rounded-2xl backdrop-blur-md bg-[rgba(var(--ft-surface-rgb),0.36)] border border-[var(--ft-border)] space-y-3">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-[var(--ft-text-secondary)]">
-                      {t(lang, 'ترکیب دارایی و بدهی', 'Capital & Liability Mix')}
-                    </span>
-                    <span className="font-num font-bold text-[var(--ft-text-primary)]">
-                      {formatMoney(summary.bankIrt, 'IRT', lang, true, isPrivate)} +{' '}
-                      {formatMoney(summary.totalTradingUsd + summary.bankUsd, 'USD', lang, true, isPrivate)}
-                    </span>
-                  </div>
-
-                  <div className="h-3.5 w-full rounded-full bg-[var(--ft-surface-subtle)] border border-[var(--ft-border)] overflow-hidden flex gap-0.5 p-0.5">
-                    <div
-                      className="h-full rounded-s-full transition-all duration-300"
-                      style={{
-                        width: `${Math.max(6, bankSharePct)}%`,
-                        background: 'var(--ft-accent-grad)',
-                      }}
-                    />
-                    <div
-                      className="h-full transition-all duration-300"
-                      style={{
-                        width: `${Math.max(6, tradingSharePct)}%`,
-                        background: 'linear-gradient(90deg, var(--ft-positive), var(--ft-accent))',
-                      }}
-                    />
-                    {debtSharePct > 0 && (
-                      <div
-                        className="h-full rounded-e-full transition-all duration-300"
-                        style={{
-                          width: `${Math.max(4, debtSharePct)}%`,
-                          background: 'linear-gradient(90deg, var(--ft-warning), var(--ft-danger))',
-                        }}
-                      />
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2 text-[11px]">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span
-                        className="w-2.5 h-2.5 rounded-sm shrink-0"
-                        style={{ background: 'var(--ft-accent)' }}
-                      />
-                      <span className="text-[var(--ft-text-muted)] truncate">
-                        {t(lang, 'بانکی', 'Bank')}
-                      </span>
-                      <span className="font-num font-bold text-[var(--ft-text-primary)] ms-auto">
-                        {bankSharePct}%
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span
-                        className="w-2.5 h-2.5 rounded-sm shrink-0"
-                        style={{ background: 'var(--ft-positive)' }}
-                      />
-                      <span className="text-[var(--ft-text-muted)] truncate">
-                        {t(lang, 'ترید MT5', 'MT5')}
-                      </span>
-                      <span className="font-num font-bold text-[var(--ft-text-primary)] ms-auto">
-                        {tradingSharePct}%
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span
-                        className="w-2.5 h-2.5 rounded-sm shrink-0"
-                        style={{ background: 'var(--ft-danger)' }}
-                      />
-                      <span className="text-[var(--ft-text-muted)] truncate">
-                        {t(lang, 'بدهی', 'Debt')}
-                      </span>
-                      <span className="font-num font-bold text-[var(--ft-danger)] ms-auto">
-                        {debtSharePct}%
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-            <section className="lg:col-span-7 glass-surface rounded-3xl p-6 space-y-4">
-              <h3 className="text-base font-semibold text-[var(--ft-text-primary)]">
-                {t(lang, 'مقایسه دارایی و جریان ماه جاری', 'Assets & Monthly Cashflow')}
-              </h3>
-              <HorizontalCompareBars
-                items={[
-                  {
-                    label: t(lang, 'نقدینگی بانک (تومان)', 'Bank Liquidity (IRT)'),
-                    value: summary.bankIrt,
-                    formattedValue: formatMoney(summary.bankIrt, 'IRT', lang, true, isPrivate),
-                    tone: 'accent',
-                  },
-                  {
-                    label: t(lang, 'اکوئیتی MT5 (دلار)', 'MT5 Equity (USD)'),
-                    value: summary.totalTradingIrt,
-                    formattedValue: formatMoney(summary.totalTradingUsd, 'USD', lang, true, isPrivate),
-                    tone: 'positive',
-                  },
-                  {
-                    label: t(lang, 'ورودی این ماه (تومان)', 'Monthly Inflow (IRT)'),
-                    value: summary.monthlyInIrtOnly,
-                    formattedValue: formatMoney(summary.monthlyInIrtOnly, 'IRT', lang, true, isPrivate),
-                    tone: 'positive',
-                  },
-                  {
-                    label: t(lang, 'مخارج این ماه (تومان)', 'Monthly Outflow (IRT)'),
-                    value: summary.monthlyOutIrtOnly,
-                    formattedValue: formatMoney(summary.monthlyOutIrtOnly, 'IRT', lang, true, isPrivate),
-                    tone: 'warning',
-                  },
-                  {
-                    label: t(lang, 'بدهی / اقساط کل (تومان)', 'Remaining Debt (IRT)'),
-                    value: summary.totalDebtIrtOnly,
-                    formattedValue: formatMoney(summary.totalDebtIrtOnly, 'IRT', lang, true, isPrivate),
-                    tone: 'danger',
-                  },
-                ]}
-              />
-            </section>
-          </div>
-
-          {/* Debt-First Budget Allocation Waterfall (#1 Priority Enforcement) */}
-          <section className="glass-surface rounded-3xl p-6 space-y-5">
-            <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-[var(--ft-border)]">
-              <div className="flex items-center gap-2.5">
-                <span
-                  className="p-2 rounded-xl border border-[var(--ft-border)]"
-                  style={{ backgroundColor: 'var(--ft-danger-soft)', color: 'var(--ft-danger)' }}
-                >
-                  <ShieldCheck className="w-4 h-4" />
-                </span>
-                <div>
-                  <h3 className="text-base font-bold text-[var(--ft-text-primary)]">
-                    {t(lang, 'آبشار بودجه‌بندی (اولویت #۱ بدهی)', 'Debt-First Budget Waterfall')}
-                  </h3>
-                  <p className="text-xs text-[var(--ft-text-muted)] mt-0.5">
-                    {t(
-                      lang,
-                      'نقدینگی بانکی ابتدا برای پوشش کامل اقساط، وام‌ها و بدهی به اشخاص رزرو می‌شود؛ سپس هزینه‌های ثابت و در نهایت بودجه و اهداف.',
-                      'Bank liquidity reserves Tier-1 installments & personal debts first, then fixed bills, then budgets & goals.'
-                    )}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                {payoffPlan.priorityQueue[0] && onPayTopPriorityDebt && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPriorityPayAccId(state.bankAccounts[0]?.id ?? '');
-                      setPriorityPayModalOpen(true);
-                    }}
-                    className="px-3.5 py-2 text-xs font-semibold rounded-xl ft-accent-gradient cursor-pointer flex items-center gap-1.5"
-                  >
-                    <CreditCard className="w-3.5 h-3.5" />
-                    <span>
-                      {t(lang, 'پرداخت فوری اولویت #1:', 'Pay #1 Priority:')}{' '}
-                      {payoffPlan.priorityQueue[0].title}
-                    </span>
-                  </button>
-                )}
+            {/* Mobile M3 Quick Action Grid + Horizontal Accounts & Credit Carousel */}
+            <div className="md:hidden space-y-4">
+              {/* 4 M3 Circular Quick Action Buttons */}
+              <div className="grid grid-cols-4 gap-2">
                 <button
                   type="button"
-                  onClick={() => setSubTab('planning')}
-                  className="px-3 py-2 text-xs font-medium rounded-xl border border-[var(--ft-border-strong)] hover:bg-[var(--ft-surface-hover)] cursor-pointer"
+                  onClick={() => openNewTransaction({ type: 'out' })}
+                  className="p-2.5 rounded-2xl glass-surface flex flex-col items-center justify-center gap-1.5 min-h-[68px] cursor-pointer active:scale-[0.98] transition-transform"
                 >
-                  {t(lang, 'مدیریت صف بدهی‌ها', 'Debt Queue')}
+                  <span className="w-9 h-9 rounded-full ft-accent-gradient flex items-center justify-center shadow-sm">
+                    <Plus className="w-4 h-4" />
+                  </span>
+                  <span className="text-[11px] font-semibold text-[var(--ft-text-primary)] truncate max-w-full">
+                    {t(lang, 'ثبت', 'Log')}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openNewTransaction({ type: 'transfer' })}
+                  className="p-2.5 rounded-2xl glass-surface flex flex-col items-center justify-center gap-1.5 min-h-[68px] cursor-pointer active:scale-[0.98] transition-transform"
+                >
+                  <span className="w-9 h-9 rounded-full bg-[var(--ft-accent-soft)] text-[var(--ft-accent)] flex items-center justify-center">
+                    <ArrowLeftRight className="w-4 h-4" />
+                  </span>
+                  <span className="text-[11px] font-semibold text-[var(--ft-text-primary)] truncate max-w-full">
+                    {t(lang, 'انتقال', 'Transfer')}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (payoffPlan.priorityQueue[0] && onPayTopPriorityDebt) {
+                      setPriorityPayAccId(state.bankAccounts[0]?.id ?? '');
+                      setPriorityPayModalOpen(true);
+                    } else {
+                      setSubTab('planning');
+                    }
+                  }}
+                  className="p-2.5 rounded-2xl glass-surface flex flex-col items-center justify-center gap-1.5 min-h-[68px] cursor-pointer active:scale-[0.98] transition-transform"
+                >
+                  <span
+                    className="w-9 h-9 rounded-full flex items-center justify-center"
+                    style={{
+                      backgroundColor: 'var(--ft-danger-soft)',
+                      color: 'var(--ft-danger)',
+                    }}
+                  >
+                    <CreditCard className="w-4 h-4" />
+                  </span>
+                  <span className="text-[11px] font-semibold text-[var(--ft-text-primary)] truncate max-w-full">
+                    {t(lang, 'تسویه', 'Pay Debt')}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSubTab('fx')}
+                  className="p-2.5 rounded-2xl glass-surface flex flex-col items-center justify-center gap-1.5 min-h-[68px] cursor-pointer active:scale-[0.98] transition-transform"
+                >
+                  <span
+                    className="w-9 h-9 rounded-full flex items-center justify-center"
+                    style={{
+                      backgroundColor: 'var(--ft-positive-soft)',
+                      color: 'var(--ft-positive)',
+                    }}
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </span>
+                  <span className="text-[11px] font-semibold text-[var(--ft-text-primary)] truncate max-w-full">
+                    {t(lang, 'نرخ ارز', 'FX Rate')}
+                  </span>
                 </button>
               </div>
-            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Tier 1 */}
-              <div className="p-4 rounded-2xl glass-tile border-s-4 border-s-[var(--ft-danger)] space-y-3">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-[var(--ft-danger)]">
-                    {t(lang, '۱. اقساط، بدهی و قرض (اولویت اول)', 'Tier 1 · Installments & Debts')}
-                  </span>
-                  <span className="font-num font-bold text-[var(--ft-text-primary)]">
-                    {summary.debtFirstWaterfall.tier1CoveredPct}%
-                  </span>
-                </div>
-                <div className="font-num text-xl font-extrabold text-[var(--ft-text-primary)]">
-                  {formatMoney(summary.debtFirstWaterfall.tier1TotalIrt, 'IRT', lang, true, isPrivate)}
-                </div>
-                <StripedProgressBar
-                  valuePct={summary.debtFirstWaterfall.tier1CoveredPct}
-                  tone={summary.debtFirstWaterfall.isDebtProtected ? 'positive' : 'danger'}
-                  heightClass="h-2"
-                />
-                <div className="text-[11px] font-num text-[var(--ft-text-muted)] space-y-0.5">
-                  <div>
-                    {t(lang, 'اقساط وام/تعهد:', 'Installments:')}{' '}
-                    {formatMoney(summary.debtFirstWaterfall.tier1InstallmentsAndLoansIrt, 'IRT', lang, true, isPrivate)}
-                  </div>
-                  <div>
-                    {t(lang, 'بدهی به اشخاص:', 'People Payables:')}{' '}
-                    {formatMoney(summary.debtFirstWaterfall.tier1PersonalDebtsIrt, 'IRT', lang, true, isPrivate)}
-                  </div>
-                </div>
-              </div>
-
-              {/* Tier 2 */}
-              <div className="p-4 rounded-2xl glass-tile border-s-4 border-s-[var(--ft-warning)] space-y-3">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-[var(--ft-warning)]">
-                    {t(lang, '۲. هزینه‌های ثابت ماه (پس از بدهی)', 'Tier 2 · Fixed Monthly Bills')}
-                  </span>
-                  <span className="font-num font-bold text-[var(--ft-text-primary)]">
-                    {summary.debtFirstWaterfall.tier2CoveredPct}%
-                  </span>
-                </div>
-                <div className="font-num text-xl font-extrabold text-[var(--ft-text-primary)]">
-                  {formatMoney(summary.debtFirstWaterfall.tier2FixedBillsIrt, 'IRT', lang, true, isPrivate)}
-                </div>
-                <StripedProgressBar
-                  valuePct={summary.debtFirstWaterfall.tier2CoveredPct}
-                  tone={summary.debtFirstWaterfall.tier2CoveredPct >= 100 ? 'accent' : 'warning'}
-                  heightClass="h-2"
-                />
-                <div className="text-[11px] text-[var(--ft-text-muted)]">
-                  {t(lang, 'تأمین از مانده نقدینگی پس از کسر رزرو اقساط و بدهی‌های Tier 1', 'Funded from remaining bank cash after Tier-1 debt reserve')}
-                </div>
-              </div>
-
-              {/* Tier 3 */}
-              <div className="p-4 rounded-2xl glass-tile border-s-4 border-s-[var(--ft-positive)] space-y-3">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-[var(--ft-positive)]">
-                    {t(lang, '۳. استخر مجاز بودجه و اهداف', 'Tier 3 · Budgets & Goals Pool')}
-                  </span>
-                  <span className="font-num font-bold text-[var(--ft-positive)]">
-                    {summary.debtFirstWaterfall.isDebtProtected
-                      ? t(lang, 'ایمن', 'Protected')
-                      : t(lang, 'محدود', 'Capped')}
-                  </span>
-                </div>
-                <div className="font-num text-xl font-extrabold text-[var(--ft-positive)]">
-                  {formatMoney(summary.debtFirstWaterfall.tier3GoalAndBudgetPoolIrt, 'IRT', lang, true, isPrivate)}
-                </div>
-                <StripedProgressBar
-                  valuePct={
-                    summary.totalBankIrt > 0
-                      ? Math.round((summary.debtFirstWaterfall.tier3GoalAndBudgetPoolIrt / summary.totalBankIrt) * 100)
-                      : 0
-                  }
-                  tone="positive"
-                  heightClass="h-2"
-                />
-                <div className="text-[11px] font-num text-[var(--ft-text-muted)]">
-                  {t(lang, 'قابل خرج آزاد نهایی:', 'Discretionary Free Cash:')}{' '}
-                  {formatMoney(summary.debtFirstWaterfall.discretionaryLeftAfterGoalsIrt, 'IRT', lang, true, isPrivate)}
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {/* Budget Pacing Overview */}
-          <section className="glass-surface rounded-3xl p-6 space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h3 className="text-base font-semibold text-[var(--ft-text-primary)]">
-                {t(lang, 'پایش بودجه‌ها', 'Budget Pacing')}
-              </h3>
-              <button
-                type="button"
-                onClick={onConfirmBudgetDay}
-                className="px-3 py-1.5 text-xs font-medium rounded-xl border border-[var(--ft-border-strong)] hover:bg-[var(--ft-surface-hover)] cursor-pointer"
-              >
-                {t(lang, 'تایید انضباط بودجه امروز (+XP کمبو)', 'Confirm Under-Budget Day (+Combo)')}
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-              {summary.budgetStatuses.map((bs) => (
-                <div
-                  key={bs.budget.id}
-                  className="p-4 rounded-2xl glass-tile space-y-2.5"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-semibold text-[var(--ft-text-primary)]">
-                      {bs.budget.categoryName}
+              {/* M3 Horizontal Accounts & Credit Lines Snap Carousel */}
+              {(state.bankAccounts.length > 0 || summary.creditLinesStatus.length > 0) && (
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-xs font-bold text-[var(--ft-text-primary)]">
+                      {t(lang, 'کارت حساب‌ها و اعتبارات', 'Accounts & Credit Lines')}
                     </span>
-                    <span
-                      className={`font-num text-xs font-semibold ${
-                        bs.paceStatus === 'exceeded'
-                          ? 'text-[var(--ft-danger)]'
-                          : bs.paceStatus === 'warning'
-                          ? 'text-[var(--ft-warning)]'
-                          : 'text-[var(--ft-positive)]'
-                      }`}
+                    <button
+                      type="button"
+                      onClick={() => setSubTab('accounts')}
+                      className="text-[11px] font-semibold text-[var(--ft-accent)] cursor-pointer"
                     >
-                      {bs.utilizationPct}%
+                      {t(lang, 'مدیریت همه', 'Manage all')}
+                    </button>
+                  </div>
+                  <M3SnapCarousel
+                    ariaLabel={t(lang, 'کارت حساب‌ها', 'Accounts Carousel')}
+                    slideClassName="w-[82%] sm:w-[56%] shrink-0 snap-center"
+                    showDots
+                    items={[
+                      ...state.bankAccounts.map((acc): M3CarouselItem => ({
+                        id: `mob_acc_${acc.id}`,
+                        content: (
+                          <button
+                            type="button"
+                            onClick={() => setHistoryAccount(acc)}
+                            className="w-full h-full text-start p-4 rounded-2xl glass-surface border border-[var(--ft-border-strong)] flex flex-col justify-between gap-3 cursor-pointer hover:border-[var(--ft-accent)] transition-colors"
+                          >
+                            <div className="flex items-center justify-between gap-2 w-full">
+                              <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[var(--ft-text-muted)]">
+                                {acc.type === 'bank' ? (
+                                  <Landmark className="w-3.5 h-3.5 text-[var(--ft-accent)]" />
+                                ) : acc.type === 'wallet' ? (
+                                  <Wallet className="w-3.5 h-3.5 text-[var(--ft-accent)]" />
+                                ) : (
+                                  <CreditCard className="w-3.5 h-3.5 text-[var(--ft-accent)]" />
+                                )}
+                                <span>
+                                  {acc.type === 'bank'
+                                    ? t(lang, 'بانکی', 'Bank')
+                                    : acc.type === 'wallet'
+                                    ? t(lang, 'کیف پول', 'Wallet')
+                                    : t(lang, 'نقد', 'Cash')}
+                                </span>
+                              </span>
+                              <span className="font-num text-[11px] font-bold text-[var(--ft-accent)]">
+                                {acc.currency}
+                              </span>
+                            </div>
+                            <div className="space-y-0.5">
+                              <div className="text-sm font-bold text-[var(--ft-text-primary)] truncate">
+                                {acc.name}
+                              </div>
+                              <div className="font-num text-lg font-extrabold text-[var(--ft-text-primary)]">
+                                {formatMoney(acc.balance, acc.currency, lang, false, isPrivate)}
+                              </div>
+                            </div>
+                          </button>
+                        ),
+                      })),
+                      ...summary.creditLinesStatus.map(({ line, availableAmount, utilizationPct }): M3CarouselItem => ({
+                        id: `mob_cred_${line.id}`,
+                        content: (
+                          <button
+                            type="button"
+                            onClick={() => openNewTransaction({ type: 'out', paymentMethod: 'credit', creditLineId: line.id })}
+                            className="w-full h-full text-start p-4 rounded-2xl glass-surface border border-[var(--ft-border-strong)] flex flex-col justify-between gap-2.5 cursor-pointer hover:border-[var(--ft-positive)] transition-colors"
+                          >
+                            <div className="flex items-center justify-between gap-2 w-full text-[11px]">
+                              <span className="font-semibold text-[var(--ft-accent)]">
+                                {t(lang, 'اعتبار اقساطی', 'Credit Line')}
+                              </span>
+                              <span className="font-num text-[var(--ft-text-muted)]">
+                                {line.defaultInstallments} {t(lang, 'قسط', 'inst')}
+                              </span>
+                            </div>
+                            <div className="space-y-1">
+                              <div className="text-sm font-bold text-[var(--ft-text-primary)] truncate">
+                                {line.title}
+                              </div>
+                              <div className="font-num text-base font-extrabold text-[var(--ft-positive)]">
+                                {formatMoney(availableAmount, line.currency, lang, true, isPrivate)}{' '}
+                                <span className="text-[11px] font-normal text-[var(--ft-text-muted)]">
+                                  {t(lang, 'آزاد', 'avail')}
+                                </span>
+                              </div>
+                            </div>
+                            <StripedProgressBar
+                              valuePct={utilizationPct}
+                              tone={utilizationPct > 85 ? 'danger' : utilizationPct > 60 ? 'warning' : 'accent'}
+                              heightClass="h-1.5"
+                            />
+                          </button>
+                        ),
+                      })),
+                    ]}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Visual Asset Mix & Cashflow Breakdown */}
+            {(() => {
+              const assetMixCard = (
+                <section className="lg:col-span-5 h-full relative overflow-hidden rounded-3xl p-5 sm:p-6 backdrop-blur-xl bg-[rgba(var(--ft-surface-rgb),0.44)] border border-[var(--ft-border-strong)] shadow-[var(--ft-shadow)] flex flex-col justify-between gap-5">
+                  <div
+                    className="pointer-events-none absolute -top-20 -end-16 w-56 h-56 rounded-full blur-3xl opacity-20"
+                    style={{ background: 'var(--ft-accent)' }}
+                  />
+
+                  <div className="relative z-10 flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-base font-bold text-[var(--ft-text-primary)]">
+                        {t(lang, 'تراز دارایی و نقدینگی', 'Asset Balance & Liquidity')}
+                      </h3>
+                      <p className="text-xs text-[var(--ft-text-muted)] mt-0.5">
+                        {t(lang, 'شاخص‌های تومانی مجزا از دلار', 'Currency-separated health')}
+                      </p>
+                    </div>
+                    <div className="text-end shrink-0">
+                      <div className="text-[11px] text-[var(--ft-text-muted)]">
+                        {t(lang, 'پوشش بدهی', 'Coverage')}
+                      </div>
+                      <div className="font-num text-sm font-bold text-[var(--ft-positive)]">
+                        {coverageRatio}x
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 3 Substantial Gradient Radial Gauge Tiles */}
+                  <div className="relative z-10 grid grid-cols-3 gap-2.5 sm:gap-3">
+                    <div className="p-2.5 sm:p-3 rounded-2xl backdrop-blur-md bg-[rgba(var(--ft-surface-rgb),0.36)] border border-[var(--ft-border)] flex flex-col items-center justify-center">
+                      <RadialGauge
+                        pct={safeCashPct}
+                        label={t(lang, 'نقد آزاد', 'Safe Cash')}
+                        sublabel={formatMoney(summary.safeToSpendIrtOnly, 'IRT', lang, true, isPrivate)}
+                        color="var(--ft-accent)"
+                        gradientTo="var(--ft-accent-secondary, var(--ft-positive))"
+                        size={92}
+                        strokeWidth={9}
+                      />
+                    </div>
+                    <div className="p-2.5 sm:p-3 rounded-2xl backdrop-blur-md bg-[rgba(var(--ft-surface-rgb),0.36)] border border-[var(--ft-border)] flex flex-col items-center justify-center">
+                      <RadialGauge
+                        pct={Math.max(0, summary.savingsRateIrtPct)}
+                        label={t(lang, 'نرخ پس‌انداز', 'Savings Rate')}
+                        sublabel={formatMoney(Math.max(0, netFlowIrtOnly), 'IRT', lang, true, isPrivate)}
+                        color="var(--ft-positive)"
+                        gradientTo="var(--ft-accent)"
+                        size={92}
+                        strokeWidth={9}
+                      />
+                    </div>
+                    <div className="p-2.5 sm:p-3 rounded-2xl backdrop-blur-md bg-[rgba(var(--ft-surface-rgb),0.36)] border border-[var(--ft-border)] flex flex-col items-center justify-center">
+                      <RadialGauge
+                        pct={debtRatioPct}
+                        label={t(lang, 'نسبت بدهی', 'Debt Ratio')}
+                        sublabel={formatMoney(summary.totalDebtIrtOnly, 'IRT', lang, true, isPrivate)}
+                        color="var(--ft-danger)"
+                        gradientTo="var(--ft-warning)"
+                        size={92}
+                        strokeWidth={9}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Asset Mix & Balance Distribution Footer Block */}
+                  <div className="relative z-10 p-4 rounded-2xl backdrop-blur-md bg-[rgba(var(--ft-surface-rgb),0.36)] border border-[var(--ft-border)] space-y-3">
+                    <div className="flex items-center justify-between text-xs gap-2">
+                      <span className="font-semibold text-[var(--ft-text-secondary)]">
+                        {t(lang, 'ترکیب دارایی و بدهی', 'Capital & Liability Mix')}
+                      </span>
+                      <span className="font-num font-bold text-[var(--ft-text-primary)] truncate">
+                        {formatMoney(summary.bankIrt, 'IRT', lang, true, isPrivate)} +{' '}
+                        {formatMoney(summary.totalTradingUsd + summary.bankUsd, 'USD', lang, true, isPrivate)}
+                      </span>
+                    </div>
+
+                    <div className="h-3.5 w-full rounded-full bg-[var(--ft-surface-subtle)] border border-[var(--ft-border)] overflow-hidden flex gap-0.5 p-0.5">
+                      <div
+                        className="h-full rounded-s-full transition-all duration-300"
+                        style={{
+                          width: `${Math.max(6, bankSharePct)}%`,
+                          background: 'var(--ft-accent-grad)',
+                        }}
+                      />
+                      <div
+                        className="h-full transition-all duration-300"
+                        style={{
+                          width: `${Math.max(6, tradingSharePct)}%`,
+                          background: 'linear-gradient(90deg, var(--ft-positive), var(--ft-accent))',
+                        }}
+                      />
+                      {debtSharePct > 0 && (
+                        <div
+                          className="h-full rounded-e-full transition-all duration-300"
+                          style={{
+                            width: `${Math.max(4, debtSharePct)}%`,
+                            background: 'linear-gradient(90deg, var(--ft-warning), var(--ft-danger))',
+                          }}
+                        />
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 text-[11px]">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span
+                          className="w-2.5 h-2.5 rounded-sm shrink-0"
+                          style={{ background: 'var(--ft-accent)' }}
+                        />
+                        <span className="text-[var(--ft-text-muted)] truncate">
+                          {t(lang, 'بانکی', 'Bank')}
+                        </span>
+                        <span className="font-num font-bold text-[var(--ft-text-primary)] ms-auto">
+                          {bankSharePct}%
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span
+                          className="w-2.5 h-2.5 rounded-sm shrink-0"
+                          style={{ background: 'var(--ft-positive)' }}
+                        />
+                        <span className="text-[var(--ft-text-muted)] truncate">
+                          {t(lang, 'ترید MT5', 'MT5')}
+                        </span>
+                        <span className="font-num font-bold text-[var(--ft-text-primary)] ms-auto">
+                          {tradingSharePct}%
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span
+                          className="w-2.5 h-2.5 rounded-sm shrink-0"
+                          style={{ background: 'var(--ft-danger)' }}
+                        />
+                        <span className="text-[var(--ft-text-muted)] truncate">
+                          {t(lang, 'بدهی', 'Debt')}
+                        </span>
+                        <span className="font-num font-bold text-[var(--ft-danger)] ms-auto">
+                          {debtSharePct}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              );
+
+              const cashflowCompareCard = (
+                <section className="lg:col-span-7 h-full glass-surface rounded-3xl p-5 sm:p-6 space-y-4">
+                  <h3 className="text-base font-semibold text-[var(--ft-text-primary)]">
+                    {t(lang, 'مقایسه دارایی و جریان ماه جاری', 'Assets & Monthly Cashflow')}
+                  </h3>
+                  <HorizontalCompareBars
+                    items={[
+                      {
+                        label: t(lang, 'نقدینگی بانک (تومان)', 'Bank Liquidity (IRT)'),
+                        value: summary.bankIrt,
+                        formattedValue: formatMoney(summary.bankIrt, 'IRT', lang, true, isPrivate),
+                        tone: 'accent',
+                      },
+                      {
+                        label: t(lang, 'اکوئیتی MT5 (دلار)', 'MT5 Equity (USD)'),
+                        value: summary.totalTradingIrt,
+                        formattedValue: formatMoney(summary.totalTradingUsd, 'USD', lang, true, isPrivate),
+                        tone: 'positive',
+                      },
+                      {
+                        label: t(lang, 'ورودی این ماه (تومان)', 'Monthly Inflow (IRT)'),
+                        value: summary.monthlyInIrtOnly,
+                        formattedValue: formatMoney(summary.monthlyInIrtOnly, 'IRT', lang, true, isPrivate),
+                        tone: 'positive',
+                      },
+                      {
+                        label: t(lang, 'مخارج این ماه (تومان)', 'Monthly Outflow (IRT)'),
+                        value: summary.monthlyOutIrtOnly,
+                        formattedValue: formatMoney(summary.monthlyOutIrtOnly, 'IRT', lang, true, isPrivate),
+                        tone: 'warning',
+                      },
+                      {
+                        label: t(lang, 'بدهی / اقساط کل (تومان)', 'Remaining Debt (IRT)'),
+                        value: summary.totalDebtIrtOnly,
+                        formattedValue: formatMoney(summary.totalDebtIrtOnly, 'IRT', lang, true, isPrivate),
+                        tone: 'danger',
+                      },
+                    ]}
+                  />
+                </section>
+              );
+
+              return (
+                <>
+                  {/* Mobile Swipeable Analytics Carousel */}
+                  <div className="md:hidden">
+                    <M3SnapCarousel
+                      ariaLabel={t(lang, 'نمودارهای خلاصه مالی', 'Finance Summary Analytics')}
+                      showTabs
+                      showDots
+                      items={[
+                        {
+                          id: 'asset_mix',
+                          label: t(lang, 'تراز و ترکیب دارایی', 'Asset Health'),
+                          content: assetMixCard,
+                        },
+                        {
+                          id: 'cashflow_compare',
+                          label: t(lang, 'مقایسه جریان نقدینگی', 'Cashflow'),
+                          content: cashflowCompareCard,
+                        },
+                      ]}
+                    />
+                  </div>
+
+                  {/* Desktop Bento Grid */}
+                  <div className="hidden md:grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+                    {assetMixCard}
+                    {cashflowCompareCard}
+                  </div>
+                </>
+              );
+            })()}
+
+            {/* Debt-First Budget Allocation Waterfall (Accordion on Mobile, Open on Desktop) */}
+            <M3AccordionCard
+              title={t(lang, 'آبشار بودجه‌بندی (اولویت #۱ بدهی)', 'Debt-First Budget Waterfall')}
+              icon={<ShieldCheck className="w-4 h-4 text-[var(--ft-danger)]" />}
+              defaultOpenMobile={false}
+              defaultOpenDesktop={true}
+              summaryText={`${t(lang, 'پوشش بدهی:', 'Tier-1:')} ${summary.debtFirstWaterfall.tier1CoveredPct}% · ${t(lang, 'استخر بودجه:', 'Pool:')} ${formatMoney(summary.debtFirstWaterfall.tier3GoalAndBudgetPoolIrt, 'IRT', lang, true, isPrivate)}`}
+              headerBadge={
+                <span className="font-num text-xs font-bold px-2.5 py-1 rounded-full bg-[var(--ft-surface-subtle)] border border-[var(--ft-border)] text-[var(--ft-text-primary)]">
+                  {summary.debtFirstWaterfall.tier1CoveredPct}%
+                </span>
+              }
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2 pb-4">
+                <p className="text-xs text-[var(--ft-text-muted)]">
+                  {t(
+                    lang,
+                    'نقدینگی بانکی ابتدا برای پوشش کامل اقساط، وام‌ها و بدهی به اشخاص رزرو می‌شود؛ سپس هزینه‌های ثابت و در نهایت بودجه و اهداف.',
+                    'Bank liquidity reserves Tier-1 installments & personal debts first, then fixed bills, then budgets & goals.'
+                  )}
+                </p>
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  {payoffPlan.priorityQueue[0] && onPayTopPriorityDebt && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPriorityPayAccId(state.bankAccounts[0]?.id ?? '');
+                        setPriorityPayModalOpen(true);
+                      }}
+                      className="min-h-[38px] px-3.5 py-1.5 text-xs font-semibold rounded-xl ft-accent-gradient cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
+                    >
+                      <CreditCard className="w-3.5 h-3.5" />
+                      <span>
+                        {t(lang, 'پرداخت فوری اولویت #1:', 'Pay #1:')} {payoffPlan.priorityQueue[0].title}
+                      </span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setSubTab('planning')}
+                    className="min-h-[38px] px-3 py-1.5 text-xs font-medium rounded-xl border border-[var(--ft-border-strong)] hover:bg-[var(--ft-surface-hover)] cursor-pointer shrink-0"
+                  >
+                    {t(lang, 'مدیریت صف بدهی‌ها', 'Debt Queue')}
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Tier 1 */}
+                <div className="p-4 rounded-2xl glass-tile border-s-4 border-s-[var(--ft-danger)] space-y-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-[var(--ft-danger)]">
+                      {t(lang, '۱. اقساط، بدهی و قرض (اولویت اول)', 'Tier 1 · Installments & Debts')}
                     </span>
+                    <span className="font-num font-bold text-[var(--ft-text-primary)]">
+                      {summary.debtFirstWaterfall.tier1CoveredPct}%
+                    </span>
+                  </div>
+                  <div className="font-num text-xl font-extrabold text-[var(--ft-text-primary)]">
+                    {formatMoney(summary.debtFirstWaterfall.tier1TotalIrt, 'IRT', lang, true, isPrivate)}
                   </div>
                   <StripedProgressBar
-                    valuePct={bs.utilizationPct}
-                    tone={
-                      bs.paceStatus === 'exceeded'
-                        ? 'danger'
-                        : bs.paceStatus === 'warning'
-                        ? 'warning'
-                        : 'positive'
-                    }
-                    heightClass="h-2.5"
+                    valuePct={summary.debtFirstWaterfall.tier1CoveredPct}
+                    tone={summary.debtFirstWaterfall.isDebtProtected ? 'positive' : 'danger'}
+                    heightClass="h-2"
                   />
-                  <div className="flex items-center justify-between text-xs text-[var(--ft-text-muted)] font-num">
-                    <span>
-                      {formatMoney(bs.spentAmount, bs.currency, lang, true, isPrivate)} /{' '}
-                      {formatMoney(bs.capAmount, bs.currency, lang, true, isPrivate)}
-                    </span>
-                    <span>
-                      {t(lang, 'سپری‌شده ماه:', 'Month pace:')} {bs.pacePct}%
-                    </span>
+                  <div className="text-[11px] font-num text-[var(--ft-text-muted)] space-y-0.5">
+                    <div>
+                      {t(lang, 'اقساط وام/تعهد:', 'Installments:')}{' '}
+                      {formatMoney(summary.debtFirstWaterfall.tier1InstallmentsAndLoansIrt, 'IRT', lang, true, isPrivate)}
+                    </div>
+                    <div>
+                      {t(lang, 'بدهی به اشخاص:', 'People Payables:')}{' '}
+                      {formatMoney(summary.debtFirstWaterfall.tier1PersonalDebtsIrt, 'IRT', lang, true, isPrivate)}
+                    </div>
                   </div>
                 </div>
-              ))}
-            </div>
-          </section>
-        </div>
+
+                {/* Tier 2 */}
+                <div className="p-4 rounded-2xl glass-tile border-s-4 border-s-[var(--ft-warning)] space-y-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-[var(--ft-warning)]">
+                      {t(lang, '۲. هزینه‌های ثابت ماه (پس از بدهی)', 'Tier 2 · Fixed Monthly Bills')}
+                    </span>
+                    <span className="font-num font-bold text-[var(--ft-text-primary)]">
+                      {summary.debtFirstWaterfall.tier2CoveredPct}%
+                    </span>
+                  </div>
+                  <div className="font-num text-xl font-extrabold text-[var(--ft-text-primary)]">
+                    {formatMoney(summary.debtFirstWaterfall.tier2FixedBillsIrt, 'IRT', lang, true, isPrivate)}
+                  </div>
+                  <StripedProgressBar
+                    valuePct={summary.debtFirstWaterfall.tier2CoveredPct}
+                    tone={summary.debtFirstWaterfall.tier2CoveredPct >= 100 ? 'accent' : 'warning'}
+                    heightClass="h-2"
+                  />
+                  <div className="text-[11px] text-[var(--ft-text-muted)]">
+                    {t(lang, 'تأمین از مانده نقدینگی پس از کسر رزرو اقساط و بدهی‌های Tier 1', 'Funded from remaining bank cash after Tier-1 debt reserve')}
+                  </div>
+                </div>
+
+                {/* Tier 3 */}
+                <div className="p-4 rounded-2xl glass-tile border-s-4 border-s-[var(--ft-positive)] space-y-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-[var(--ft-positive)]">
+                      {t(lang, '۳. استخر مجاز بودجه و اهداف', 'Tier 3 · Budgets & Goals Pool')}
+                    </span>
+                    <span className="font-num font-bold text-[var(--ft-positive)]">
+                      {summary.debtFirstWaterfall.isDebtProtected
+                        ? t(lang, 'ایمن', 'Protected')
+                        : t(lang, 'محدود', 'Capped')}
+                    </span>
+                  </div>
+                  <div className="font-num text-xl font-extrabold text-[var(--ft-positive)]">
+                    {formatMoney(summary.debtFirstWaterfall.tier3GoalAndBudgetPoolIrt, 'IRT', lang, true, isPrivate)}
+                  </div>
+                  <StripedProgressBar
+                    valuePct={
+                      summary.totalBankIrt > 0
+                        ? Math.round((summary.debtFirstWaterfall.tier3GoalAndBudgetPoolIrt / summary.totalBankIrt) * 100)
+                        : 0
+                    }
+                    tone="positive"
+                    heightClass="h-2"
+                  />
+                  <div className="text-[11px] font-num text-[var(--ft-text-muted)]">
+                    {t(lang, 'قابل خرج آزاد نهایی:', 'Discretionary Free Cash:')}{' '}
+                    {formatMoney(summary.debtFirstWaterfall.discretionaryLeftAfterGoalsIrt, 'IRT', lang, true, isPrivate)}
+                  </div>
+                </div>
+              </div>
+            </M3AccordionCard>
+
+            {/* Budget Pacing Overview (Accordion on Mobile, Open on Desktop) */}
+            <M3AccordionCard
+              title={t(lang, 'پایش بودجه‌ها', 'Budget Pacing')}
+              defaultOpenMobile={false}
+              defaultOpenDesktop={true}
+              summaryText={`${summary.budgetStatuses.length} ${t(lang, 'دسته فعال ماه جاری', 'active caps')}`}
+            >
+              <div className="flex items-center justify-end pt-2 pb-4">
+                <button
+                  type="button"
+                  onClick={onConfirmBudgetDay}
+                  className="min-h-[38px] px-3.5 py-1.5 text-xs font-medium rounded-xl border border-[var(--ft-border-strong)] hover:bg-[var(--ft-surface-hover)] cursor-pointer whitespace-nowrap"
+                >
+                  {t(lang, 'تایید انضباط بودجه امروز (+XP کمبو)', 'Confirm Under-Budget Day (+Combo)')}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-5">
+                {summary.budgetStatuses.map((bs) => (
+                  <div
+                    key={bs.budget.id}
+                    className="p-4 rounded-2xl glass-tile space-y-2.5"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-semibold text-[var(--ft-text-primary)]">
+                        {bs.budget.categoryName}
+                      </span>
+                      <span
+                        className={`font-num text-xs font-semibold ${
+                          bs.paceStatus === 'exceeded'
+                            ? 'text-[var(--ft-danger)]'
+                            : bs.paceStatus === 'warning'
+                            ? 'text-[var(--ft-warning)]'
+                            : 'text-[var(--ft-positive)]'
+                        }`}
+                      >
+                        {bs.utilizationPct}%
+                      </span>
+                    </div>
+                    <StripedProgressBar
+                      valuePct={bs.utilizationPct}
+                      tone={
+                        bs.paceStatus === 'exceeded'
+                          ? 'danger'
+                          : bs.paceStatus === 'warning'
+                          ? 'warning'
+                          : 'positive'
+                      }
+                      heightClass="h-2.5"
+                    />
+                    <div className="flex items-center justify-between text-xs text-[var(--ft-text-muted)] font-num">
+                      <span>
+                        {formatMoney(bs.spentAmount, bs.currency, lang, true, isPrivate)} /{' '}
+                        {formatMoney(bs.capAmount, bs.currency, lang, true, isPrivate)}
+                      </span>
+                      <span>
+                        {t(lang, 'سپری‌شده ماه:', 'Month pace:')} {bs.pacePct}%
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </M3AccordionCard>
+          </div>
         );
       })()}
 
@@ -2169,38 +2386,19 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                       {t(lang, 'هنوز هیچ نقل‌وانتقالی برای این شخص ثبت نشده است.', 'No ledger entries recorded for this person yet.')}
                     </div>
                   ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr className="text-[var(--ft-text-muted)] bg-[var(--ft-surface-subtle)]">
-                            <th className="py-2.5 px-3 text-start font-medium rounded-s-xl">
-                              {t(lang, 'تاریخ', 'Date')}
-                            </th>
-                            <th className="py-2.5 px-3 text-start font-medium">
-                              {t(lang, 'شرح و حساب متصل', 'Description & Account')}
-                            </th>
-                            <th className="py-2.5 px-3 text-start font-medium">
-                              {t(lang, 'مبلغ گردش', 'Amount')}
-                            </th>
-                            <th className="py-2.5 px-3 text-start font-medium">
-                              {t(lang, 'مانده لحظه‌ای', 'Running Bal')}
-                            </th>
-                            <th className="py-2.5 px-3 text-end font-medium rounded-e-xl" />
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[var(--ft-border)]">
-                          {activePersonLedger.statement.map(({ entry, runningBalanceIrt }) => {
-                            const accName = entry.accountId
-                              ? state.bankAccounts.find((a) => a.id === entry.accountId)?.name
-                              : null;
-                            const isGive = entry.direction === 'give';
-                            return (
-                              <tr key={entry.id} className="hover:bg-[var(--ft-surface-hover)]">
-                                <td className="py-3 px-3 font-num text-[var(--ft-text-muted)] whitespace-nowrap">
-                                  {formatJalaliDate(entry.date, lang)}
-                                </td>
-                                <td className="py-3 px-3">
-                                  <div className="font-medium text-[var(--ft-text-primary)]">
+                    <>
+                      {/* Mobile Cards (< sm) */}
+                      <div className="sm:hidden space-y-2.5">
+                        {activePersonLedger.statement.map(({ entry, runningBalanceIrt }) => {
+                          const accName = entry.accountId
+                            ? state.bankAccounts.find((a) => a.id === entry.accountId)?.name
+                            : null;
+                          const isGive = entry.direction === 'give';
+                          return (
+                            <div key={`mob_ent_${entry.id}`} className="p-3.5 rounded-2xl glass-tile space-y-2">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <div className="text-xs font-semibold text-[var(--ft-text-primary)] truncate">
                                     {entry.note ||
                                       (isGive
                                         ? t(lang, 'پرداخت / انتقال به شخص', 'Paid to person')
@@ -2211,20 +2409,26 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                                       ? `${t(lang, 'حساب:', 'Account:')} ${accName}`
                                       : t(lang, 'ثبت دفتری بدون حساب بانکی', 'Ledger-only entry')}
                                   </div>
-                                </td>
-                                <td
-                                  className={`py-3 px-3 font-num font-bold whitespace-nowrap ${
+                                </div>
+                                <div
+                                  className={`text-xs font-num font-bold whitespace-nowrap shrink-0 ${
                                     isGive ? 'text-[var(--ft-positive)]' : 'text-[var(--ft-danger)]'
                                   }`}
                                 >
                                   {!isPrivate && (isGive ? '+' : '-')}
                                   {formatMoney(entry.amount, entry.currency, lang, false, isPrivate)}
-                                </td>
-                                <td className="py-3 px-3 font-num font-semibold text-[var(--ft-text-primary)] whitespace-nowrap">
-                                  {!isPrivate && runningBalanceIrt > 0 ? '+' : ''}
-                                  {formatMoney(runningBalanceIrt, 'IRT', lang, true, isPrivate)}
-                                </td>
-                                <td className="py-3 px-3 text-end">
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-between gap-2 pt-2 border-t border-[var(--ft-border)] text-[11px] font-num">
+                                <span className="text-[var(--ft-text-muted)]">
+                                  {formatJalaliDate(entry.date, lang)}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold text-[var(--ft-text-primary)]">
+                                    {t(lang, 'مانده:', 'Bal:')}{' '}
+                                    {!isPrivate && runningBalanceIrt > 0 ? '+' : ''}
+                                    {formatMoney(runningBalanceIrt, 'IRT', lang, true, isPrivate)}
+                                  </span>
                                   <button
                                     type="button"
                                     onClick={() => onDeletePersonEntry(entry.id)}
@@ -2233,13 +2437,86 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
                                   </button>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Desktop Table (>= sm) */}
+                      <div className="hidden sm:block overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-[var(--ft-text-muted)] bg-[var(--ft-surface-subtle)]">
+                              <th className="py-2.5 px-3 text-start font-medium rounded-s-xl">
+                                {t(lang, 'تاریخ', 'Date')}
+                              </th>
+                              <th className="py-2.5 px-3 text-start font-medium">
+                                {t(lang, 'شرح و حساب متصل', 'Description & Account')}
+                              </th>
+                              <th className="py-2.5 px-3 text-start font-medium">
+                                {t(lang, 'مبلغ گردش', 'Amount')}
+                              </th>
+                              <th className="py-2.5 px-3 text-start font-medium">
+                                {t(lang, 'مانده لحظه‌ای', 'Running Bal')}
+                              </th>
+                              <th className="py-2.5 px-3 text-end font-medium rounded-e-xl" />
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[var(--ft-border)]">
+                            {activePersonLedger.statement.map(({ entry, runningBalanceIrt }) => {
+                              const accName = entry.accountId
+                                ? state.bankAccounts.find((a) => a.id === entry.accountId)?.name
+                                : null;
+                              const isGive = entry.direction === 'give';
+                              return (
+                                <tr key={entry.id} className="hover:bg-[var(--ft-surface-hover)]">
+                                  <td className="py-3 px-3 font-num text-[var(--ft-text-muted)] whitespace-nowrap">
+                                    {formatJalaliDate(entry.date, lang)}
+                                  </td>
+                                  <td className="py-3 px-3">
+                                    <div className="font-medium text-[var(--ft-text-primary)]">
+                                      {entry.note ||
+                                        (isGive
+                                          ? t(lang, 'پرداخت / انتقال به شخص', 'Paid to person')
+                                          : t(lang, 'دریافت از شخص', 'Received from person'))}
+                                    </div>
+                                    <div className="text-[11px] text-[var(--ft-text-muted)]">
+                                      {accName
+                                        ? `${t(lang, 'حساب:', 'Account:')} ${accName}`
+                                        : t(lang, 'ثبت دفتری بدون حساب بانکی', 'Ledger-only entry')}
+                                    </div>
+                                  </td>
+                                  <td
+                                    className={`py-3 px-3 font-num font-bold whitespace-nowrap ${
+                                      isGive ? 'text-[var(--ft-positive)]' : 'text-[var(--ft-danger)]'
+                                    }`}
+                                  >
+                                    {!isPrivate && (isGive ? '+' : '-')}
+                                    {formatMoney(entry.amount, entry.currency, lang, false, isPrivate)}
+                                  </td>
+                                  <td className="py-3 px-3 font-num font-semibold text-[var(--ft-text-primary)] whitespace-nowrap">
+                                    {!isPrivate && runningBalanceIrt > 0 ? '+' : ''}
+                                    {formatMoney(runningBalanceIrt, 'IRT', lang, true, isPrivate)}
+                                  </td>
+                                  <td className="py-3 px-3 text-end">
+                                    <button
+                                      type="button"
+                                      onClick={() => onDeletePersonEntry(entry.id)}
+                                      className="p-1.5 rounded-lg hover:bg-[var(--ft-danger-soft)] text-[var(--ft-text-muted)] hover:text-[var(--ft-danger)] cursor-pointer"
+                                      aria-label="Delete ledger entry"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
                   )}
                 </>
               )}
@@ -3188,783 +3465,427 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
         </section>
       )}
 
-      {/* MODAL: Add / Edit Transaction or Transfer */}
-      {txModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <form
-            onSubmit={handleSaveTransaction}
-            className="glass-surface-high rounded-2xl p-6 w-full max-w-lg space-y-4 my-auto"
-          >
-            <h3 className="text-base font-semibold text-[var(--ft-text-primary)]">
-              {editingTxId ? t(lang, 'ویرایش تراکنش', 'Edit Transaction') : t(lang, 'ثبت تراکنش با منشاء و لیبل', 'Log Transaction with Origin')}
-            </h3>
+      {/* MODAL / SHEET: Add / Edit Transaction or Transfer */}
+      <ResponsiveModalSheet
+        open={txModalOpen}
+        onClose={() => setTxModalOpen(false)}
+        title={
+          editingTxId
+            ? t(lang, 'ویرایش تراکنش', 'Edit Transaction')
+            : t(lang, 'ثبت تراکنش با منشاء و لیبل', 'Log Transaction with Origin')
+        }
+        maxWidthClass="md:max-w-lg"
+        asForm
+        onSubmit={handleSaveTransaction}
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setTxModalOpen(false)}
+              className="min-h-[44px] px-4 py-2 text-xs font-medium rounded-xl border border-[var(--ft-border)] cursor-pointer"
+            >
+              {t(lang, 'انصراف', 'Cancel')}
+            </button>
+            <button
+              type="submit"
+              className="min-h-[44px] flex-1 sm:flex-none px-5 py-2 text-xs font-semibold rounded-xl bg-[var(--ft-accent)] text-[var(--ft-accent-fg)] cursor-pointer"
+            >
+              {t(lang, 'ذخیره', 'Save')}
+            </button>
+          </div>
+        }
+      >
+        <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-[var(--ft-surface-subtle)] border border-[var(--ft-border)]">
+          {(
+            [
+              ['out', t(lang, 'هزینه / خرید', 'Expense')],
+              ['in', t(lang, 'درآمد / واریز', 'Income')],
+              ['transfer', t(lang, 'انتقال داخلی', 'Transfer')],
+            ] as Array<[TransactionType, string]>
+          ).map(([tp, lb]) => (
+            <button
+              key={tp}
+              type="button"
+              onClick={() => setTxType(tp)}
+              className={`min-h-[38px] py-2 text-xs font-medium rounded-lg cursor-pointer ${
+                txType === tp
+                  ? 'bg-[var(--ft-accent)] text-[var(--ft-accent-fg)]'
+                  : 'text-[var(--ft-text-secondary)]'
+              }`}
+            >
+              {lb}
+            </button>
+          ))}
+        </div>
 
-            <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-[var(--ft-surface-subtle)] border border-[var(--ft-border)]">
+        {txType === 'out' && (
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-[var(--ft-text-muted)] block">
+              {t(lang, 'منشاء پرداخت هزینه', 'Payment Origin')}
+            </label>
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
               {(
                 [
-                  ['out', t(lang, 'هزینه / خرید', 'Expense')],
-                  ['in', t(lang, 'درآمد / واریز', 'Income')],
-                  ['transfer', t(lang, 'انتقال داخلی', 'Transfer')],
-                ] as Array<[TransactionType, string]>
-              ).map(([tp, lb]) => (
+                  ['bank', t(lang, 'حساب بانکی', 'Bank')],
+                  ['cash', t(lang, 'نقدی', 'Cash')],
+                  ['usd', t(lang, 'حساب دلاری', 'USD Wallet')],
+                  ['credit', t(lang, 'اعتباری', 'Credit')],
+                  ['person_debt', t(lang, 'قرض از فرد', 'Borrowed')],
+                ] as Array<[PaymentMethod, string]>
+              ).map(([pm, lb]) => (
                 <button
-                  key={tp}
+                  key={pm}
                   type="button"
-                  onClick={() => setTxType(tp)}
-                  className={`py-2 text-xs font-medium rounded-lg cursor-pointer ${
-                    txType === tp
-                      ? 'bg-[var(--ft-accent)] text-[var(--ft-accent-fg)]'
-                      : 'text-[var(--ft-text-secondary)]'
+                  onClick={() => {
+                    setTxPaymentMethod(pm);
+                    if (pm === 'usd') {
+                      setTxCurrency('USD');
+                      const usdAcc = state.bankAccounts.find((a) => a.currency === 'USD');
+                      if (usdAcc) setTxAccountId(usdAcc.id);
+                    } else if (pm === 'cash') {
+                      const cashAcc = state.bankAccounts.find((a) => a.type === 'cash');
+                      if (cashAcc) setTxAccountId(cashAcc.id);
+                    } else if (pm === 'bank') {
+                      setTxCurrency('IRT');
+                      const bankAcc = state.bankAccounts.find((a) => a.type === 'bank' && a.currency === 'IRT');
+                      if (bankAcc) setTxAccountId(bankAcc.id);
+                    } else if (pm === 'credit') {
+                      const cl = (state.creditLines ?? []).find((c) => c.id === txCreditLineId) ?? state.creditLines?.[0];
+                      if (cl) {
+                        setTxCreditLineId(cl.id);
+                        setTxCurrency(cl.currency);
+                        setTxInstallments(String(cl.defaultInstallments));
+                      }
+                    }
+                  }}
+                  className={`min-h-[38px] py-2 px-1.5 text-[11px] font-medium rounded-xl border transition-colors cursor-pointer truncate ${
+                    txPaymentMethod === pm
+                      ? 'bg-[var(--ft-accent)] text-[var(--ft-accent-fg)] border-transparent font-semibold'
+                      : 'border-[var(--ft-border)] text-[var(--ft-text-secondary)] hover:bg-[var(--ft-surface-hover)]'
                   }`}
                 >
                   {lb}
                 </button>
               ))}
             </div>
-
-            {txType === 'out' && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-[var(--ft-text-muted)] block">
-                  {t(lang, 'منشاء پرداخت هزینه', 'Payment Origin')}
-                </label>
-                <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
-                  {(
-                    [
-                      ['bank', t(lang, 'حساب بانکی', 'Bank')],
-                      ['cash', t(lang, 'نقدی', 'Cash')],
-                      ['usd', t(lang, 'حساب دلاری', 'USD Wallet')],
-                      ['credit', t(lang, 'اعتباری', 'Credit')],
-                      ['person_debt', t(lang, 'قرض از فرد', 'Borrowed')],
-                    ] as Array<[PaymentMethod, string]>
-                  ).map(([pm, lb]) => (
-                    <button
-                      key={pm}
-                      type="button"
-                      onClick={() => {
-                        setTxPaymentMethod(pm);
-                        if (pm === 'usd') {
-                          setTxCurrency('USD');
-                          const usdAcc = state.bankAccounts.find((a) => a.currency === 'USD');
-                          if (usdAcc) setTxAccountId(usdAcc.id);
-                        } else if (pm === 'cash') {
-                          const cashAcc = state.bankAccounts.find((a) => a.type === 'cash');
-                          if (cashAcc) setTxAccountId(cashAcc.id);
-                        } else if (pm === 'bank') {
-                          setTxCurrency('IRT');
-                          const bankAcc = state.bankAccounts.find((a) => a.type === 'bank' && a.currency === 'IRT');
-                          if (bankAcc) setTxAccountId(bankAcc.id);
-                        } else if (pm === 'credit') {
-                          const cl = (state.creditLines ?? []).find((c) => c.id === txCreditLineId) ?? state.creditLines?.[0];
-                          if (cl) {
-                            setTxCreditLineId(cl.id);
-                            setTxCurrency(cl.currency);
-                            setTxInstallments(String(cl.defaultInstallments));
-                          }
-                        }
-                      }}
-                      className={`py-2 px-1.5 text-[11px] font-medium rounded-xl border transition-colors cursor-pointer truncate ${
-                        txPaymentMethod === pm
-                          ? 'bg-[var(--ft-accent)] text-[var(--ft-accent-fg)] border-transparent font-semibold'
-                          : 'border-[var(--ft-border)] text-[var(--ft-text-secondary)] hover:bg-[var(--ft-surface-hover)]'
-                      }`}
-                    >
-                      {lb}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-3 items-start">
-              {(() => {
-                const amtNum = Number(txAmount);
-                const srcAcc = state.bankAccounts.find((a) => a.id === txAccountId);
-                const isBankLike = txType !== 'out' || (txPaymentMethod !== 'credit' && txPaymentMethod !== 'person_debt');
-                const txAmtInAccCurrency =
-                  isBankLike && srcAcc && txAmount !== '' && Number.isFinite(amtNum)
-                    ? convertCurrency(amtNum, txCurrency, srcAcc.currency, usdToman)
-                    : 0;
-                const amountError =
-                  txAmount !== '' && (!Number.isFinite(amtNum) || amtNum <= 0)
-                    ? t(lang, 'مبلغ باید بزرگ‌تر از صفر باشد', 'Must be > 0')
-                    : undefined;
-                const amountWarning =
-                  !amountError &&
-                  isBankLike &&
-                  txType !== 'in' &&
-                  srcAcc &&
-                  txAmount !== '' &&
-                  txAmtInAccCurrency > srcAcc.balance
-                    ? t(lang, 'مبلغ از موجودی حساب بیشتر است', 'Exceeds account balance')
-                    : !amountError && selectedBudgetPreview && selectedBudgetPreview.projectedPct >= 100
-                    ? t(lang, 'از سقف بودجه این ماه فراتر می‌رود', 'Exceeds monthly budget cap')
-                    : undefined;
-                return (
-                  <MaterialInput
-                    type="number"
-                    step="any"
-                    required
-                    ltrNum
-                    label={t(lang, 'مبلغ', 'Amount')}
-                    value={txAmount}
-                    onChange={(e) => setTxAmount(e.target.value)}
-                    error={amountError}
-                    warning={amountWarning}
-                  />
-                );
-              })()}
-              <div className="md-field">
-                <label className="md-field-label">{t(lang, 'ارز', 'Currency')}</label>
-                <GlassSelect<CurrencyCode>
-                  className="w-full"
-                  value={txCurrency}
-                  onChange={setTxCurrency}
-                  options={[
-                    { value: 'IRT', label: 'IRT (تومان)' },
-                    { value: 'USD', label: 'USD ($)' },
-                  ]}
-                />
-              </div>
-            </div>
-
-            {txType === 'out' && txPaymentMethod === 'credit' ? (
-              <div className="grid grid-cols-3 gap-3 items-start">
-                <div className="col-span-2">
-                  <label className="text-xs text-[var(--ft-text-muted)] block mb-1">
-                    {t(lang, 'خط اعتبار (دیجی‌پی / اسنپ‌پی...)', 'Credit Line')}
-                  </label>
-                  <GlassSelect
-                    className="w-full"
-                    value={txCreditLineId}
-                    onChange={(id) => {
-                      setTxCreditLineId(id);
-                      const cl = (state.creditLines ?? []).find((c) => c.id === id);
-                      if (cl) {
-                        setTxCurrency(cl.currency);
-                        setTxInstallments(String(cl.defaultInstallments));
-                      }
-                    }}
-                    options={(state.creditLines ?? []).map((c) => {
-                      const st = summary.creditLinesStatus.find((s) => s.line.id === c.id);
-                      return {
-                        value: c.id,
-                        label: c.title,
-                        hint: formatMoney(st?.availableAmount ?? c.creditLimit, c.currency, lang, true, isPrivate),
-                      };
-                    })}
-                  />
-                </div>
-                <MaterialInput
-                  type="number"
-                  fieldSize="sm"
-                  ltrNum
-                  min={1}
-                  max={36}
-                  label={t(lang, 'تعداد قسط', 'Installments')}
-                  value={txInstallments}
-                  onChange={(e) => setTxInstallments(e.target.value)}
-                  hint={
-                    Number(txAmount) > 0 && Number(txInstallments) > 0
-                      ? `${formatMoney(Number(txAmount) / Number(txInstallments), txCurrency, lang, true, isPrivate)} / ${t(lang, 'قسط', 'mo')}`
-                      : undefined
-                  }
-                />
-              </div>
-            ) : txType === 'out' && txPaymentMethod === 'person_debt' ? (
-              <div>
-                <label className="text-xs text-[var(--ft-text-muted)] block mb-1">
-                  {t(lang, 'شخص قرض‌دهنده (ثبت خودکار در دفتر اشخاص)', 'Creditor Person')}
-                </label>
-                <GlassSelect
-                  className="w-full"
-                  value={txPersonId}
-                  onChange={setTxPersonId}
-                  options={(state.people ?? []).map((p) => ({
-                    value: p.id,
-                    label: p.name,
-                  }))}
-                />
-              </div>
-            ) : (
-              <div>
-                <label className="text-xs text-[var(--ft-text-muted)] block mb-1">
-                  {txType === 'transfer' ? t(lang, 'حساب مبدأ', 'From Account') : t(lang, 'حساب بانکی / نقدی / دلاری', 'Account')}
-                </label>
-                <GlassSelect
-                  className="w-full"
-                  value={txAccountId}
-                  onChange={setTxAccountId}
-                  options={state.bankAccounts.map((a) => ({
-                    value: a.id,
-                    label: `${a.name} (${a.currency})`,
-                    hint: formatMoney(a.balance, a.currency, lang, false, isPrivate),
-                  }))}
-                />
-              </div>
-            )}
-
-            {txType === 'transfer' && (
-              <div>
-                <label className="text-xs text-[var(--ft-text-muted)] block mb-1 flex items-center gap-1">
-                  <ArrowLeftRight className="w-3.5 h-3.5 text-[var(--ft-accent)]" />
-                  <span>{t(lang, 'حساب مقصد (تبدیل خودکار با نرخ دلار)', 'To Account (Auto-FX)')}</span>
-                </label>
-                <GlassSelect
-                  className="w-full"
-                  value={txToAccountId}
-                  onChange={setTxToAccountId}
-                  options={state.bankAccounts.map((a) => ({
-                    value: a.id,
-                    label: `${a.name} (${a.currency})`,
-                    hint: formatMoney(a.balance, a.currency, lang, false, isPrivate),
-                  }))}
-                />
-              </div>
-            )}
-
-            {txType === 'out' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
-                <div className="md-field">
-                  <label className="md-field-label">{t(lang, 'لیبل هزینه', 'Expense Label')}</label>
-                  <GlassSelect
-                    size="sm"
-                    className="w-full"
-                    value={txCategoryLabel}
-                    onChange={setTxCategoryLabel}
-                    options={[
-                      { value: 'خوراک و کافه', label: t(lang, 'خوراک و کافه', 'Food & Cafe') },
-                      { value: 'خرید کالا', label: t(lang, 'خرید کالا', 'Shopping') },
-                      { value: 'مسکن و قبوض', label: t(lang, 'مسکن و قبوض', 'Housing & Bills') },
-                      { value: 'حمل‌ونقل', label: t(lang, 'حمل‌ونقل', 'Transport') },
-                      { value: 'ابزار و سرور', label: t(lang, 'ابزار و سرور', 'Tools & Server') },
-                      { value: 'درمان', label: t(lang, 'درمان', 'Health') },
-                      { value: 'سایر', label: t(lang, 'سایر', 'Other') },
-                    ]}
-                  />
-                </div>
-                {state.budgetCaps.length > 0 && (
-                  <div className="md-field">
-                    <label className="md-field-label">{t(lang, 'سقف بودجه (اختیاری)', 'Budget Cap (Opt.)')}</label>
-                    <GlassSelect
-                      size="sm"
-                      className="w-full"
-                      value={txBudgetId}
-                      onChange={setTxBudgetId}
-                      options={[
-                        { value: '', label: t(lang, 'بدون اتصال به بودجه', 'No Budget Cap') },
-                        ...state.budgetCaps.map((b) => ({
-                          value: b.id,
-                          label: b.categoryName,
-                        })),
-                      ]}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-
-            {txType === 'out' && selectedBudgetPreview && (
-              <div
-                className={`text-xs flex items-center gap-1.5 ${
-                  selectedBudgetPreview.projectedPct >= 100
-                    ? 'text-[var(--ft-danger)]'
-                    : selectedBudgetPreview.projectedPct >= 80
-                    ? 'text-[var(--ft-warning)]'
-                    : 'text-[var(--ft-positive)]'
-                }`}
-              >
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                <span>
-                  {t(
-                    lang,
-                    `مصرف جدید این بودجه: ${selectedBudgetPreview.projectedPct}%`,
-                    `Projected budget usage: ${selectedBudgetPreview.projectedPct}%`
-                  )}
-                </span>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
-              <JalaliDatePicker
-                lang={lang}
-                fieldSize="sm"
-                label={t(lang, 'تاریخ (جلالی)', 'Date')}
-                value={txDate}
-                onChange={setTxDate}
-              />
-              <MaterialInput
-                type="text"
-                fieldSize="sm"
-                label={t(lang, 'یادداشت / شرح', 'Note')}
-                placeholder={t(lang, 'مثلاً خرید، شام، قبض...', 'e.g. Purchase, Dinner...')}
-                value={txNote}
-                onChange={(e) => setTxNote(e.target.value)}
-              />
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setTxModalOpen(false)}
-                className="px-4 py-2 text-xs rounded-xl border border-[var(--ft-border)] cursor-pointer"
-              >
-                {t(lang, 'انصراف', 'Cancel')}
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 text-xs font-semibold rounded-xl bg-[var(--ft-accent)] text-[var(--ft-accent-fg)] cursor-pointer"
-              >
-                {t(lang, 'ذخیره', 'Save')}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* MODAL: Unified Add / Edit Account (Bank/Wallet/Cash OR BNPL Credit Line) */}
-      {accModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <form
-            onSubmit={accModalMode === 'credit' ? handleSaveCreditLine : handleSaveAccount}
-            className="glass-surface-high rounded-2xl p-6 w-full max-w-md space-y-4 my-auto"
-          >
-            <h3 className="text-base font-semibold text-[var(--ft-text-primary)]">
-              {accModalMode === 'credit'
-                ? editingCreditId
-                  ? t(lang, 'ویرایش خط اعتبار اقساطی', 'Edit Credit Line')
-                  : t(lang, 'افزودن خط اعتبار اقساطی', 'Add BNPL Credit Line')
-                : editingAccId
-                ? t(lang, 'ویرایش حساب مالی', 'Edit Account')
-                : t(lang, 'افزودن حساب / اعتبار جدید', 'Add Account / Credit Line')}
-            </h3>
-
-            {/* Unified Mode Switcher when creating new entry */}
-            {!editingAccId && !editingCreditId && (
-              <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[var(--ft-surface-subtle)] border border-[var(--ft-border)]">
-                <button
-                  type="button"
-                  onClick={() => setAccModalMode('bank_wallet')}
-                  className={`py-2 text-xs font-medium rounded-lg cursor-pointer transition-colors ${
-                    accModalMode === 'bank_wallet'
-                      ? 'bg-[var(--ft-accent)] text-[var(--ft-accent-fg)] font-semibold'
-                      : 'text-[var(--ft-text-secondary)]'
-                  }`}
-                >
-                  {t(lang, 'حساب بانکی / نقدی / کیف‌پول', 'Bank / Cash / Wallet')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAccModalMode('credit')}
-                  className={`py-2 text-xs font-medium rounded-lg cursor-pointer transition-colors ${
-                    accModalMode === 'credit'
-                      ? 'bg-[var(--ft-accent)] text-[var(--ft-accent-fg)] font-semibold'
-                      : 'text-[var(--ft-text-secondary)]'
-                  }`}
-                >
-                  {t(lang, 'اعتبار اقساطی (دیجی‌پی...)', 'Credit Line (BNPL)')}
-                </button>
-              </div>
-            )}
-
-            {accModalMode === 'bank_wallet' ? (
-              <>
-                <MaterialInput
-                  type="text"
-                  required
-                  label={t(lang, 'نام حساب', 'Account Name')}
-                  placeholder={t(lang, 'مثلاً بانک ملت', 'e.g. Main Bank')}
-                  value={accName}
-                  onChange={(e) => setAccName(e.target.value)}
-                />
-                <div className="grid grid-cols-2 gap-3">
-                  <GlassSelect<BankAccountType>
-                    className="w-full"
-                    value={accType}
-                    onChange={setAccType}
-                    options={[
-                      { value: 'bank', label: t(lang, 'بانکی', 'Bank') },
-                      { value: 'cash', label: t(lang, 'نقد', 'Cash') },
-                      { value: 'wallet', label: t(lang, 'کیف پول', 'Wallet') },
-                    ]}
-                  />
-                  <GlassSelect<CurrencyCode>
-                    className="w-full"
-                    value={accCurrency}
-                    onChange={setAccCurrency}
-                    options={[
-                      { value: 'IRT', label: 'IRT (تومان)' },
-                      { value: 'USD', label: 'USD ($)' },
-                    ]}
-                  />
-                </div>
-                <MaterialInput
-                  type="number"
-                  step="any"
-                  required
-                  ltrNum
-                  label={t(lang, 'موجودی فعلی', 'Current Balance')}
-                  value={accBalance}
-                  onChange={(e) => setAccBalance(e.target.value)}
-                  error={
-                    accBalance !== '' && Number(accBalance) < 0
-                      ? t(lang, 'موجودی نمی‌تواند منفی باشد', 'Balance cannot be negative')
-                      : undefined
-                  }
-                />
-                <MaterialInput
-                  type="text"
-                  label={t(lang, 'یادداشت (اختیاری)', 'Note (optional)')}
-                  value={accNote}
-                  onChange={(e) => setAccNote(e.target.value)}
-                />
-              </>
-            ) : (
-              <>
-                <MaterialInput
-                  type="text"
-                  required
-                  label={t(lang, 'عنوان اعتبار', 'Credit Title')}
-                  placeholder={t(lang, 'مثلاً اعتبار دیجی‌پی', 'e.g. Digipay Credit')}
-                  value={crTitle}
-                  onChange={(e) => setCrTitle(e.target.value)}
-                />
-                <div className="grid grid-cols-2 gap-3 items-start">
-                  <div className="md-field">
-                    <label className="md-field-label">{t(lang, 'ارائه‌دهنده', 'Provider')}</label>
-                    <GlassSelect<CreditProvider>
-                      className="w-full"
-                      value={crProvider}
-                      onChange={setCrProvider}
-                      options={[
-                        { value: 'digipay', label: t(lang, 'دیجی‌پی', 'Digipay') },
-                        { value: 'snapppay', label: t(lang, 'اسنپ‌پی', 'SnappPay') },
-                        { value: 'tara', label: t(lang, 'تارا', 'Tara') },
-                        { value: 'card', label: t(lang, 'کارت اعتباری بانکی', 'Bank Credit Card') },
-                        { value: 'other', label: t(lang, 'سایر', 'Other') },
-                      ]}
-                    />
-                  </div>
-                  <div className="md-field">
-                    <label className="md-field-label">{t(lang, 'ارز', 'Currency')}</label>
-                    <GlassSelect<CurrencyCode>
-                      className="w-full"
-                      value={crCurrency}
-                      onChange={setCrCurrency}
-                      options={[
-                        { value: 'IRT', label: 'IRT (تومان)' },
-                        { value: 'USD', label: 'USD ($)' },
-                      ]}
-                    />
-                  </div>
-                </div>
-                <MaterialInput
-                  type="number"
-                  required
-                  ltrNum
-                  step="any"
-                  label={t(lang, 'سقف کل اعتبار', 'Total Credit Limit')}
-                  value={crLimit}
-                  onChange={(e) => setCrLimit(e.target.value)}
-                  error={
-                    crLimit !== '' && Number(crLimit) <= 0
-                      ? t(lang, 'سقف اعتبار باید > ۰ باشد', 'Must be > 0')
-                      : undefined
-                  }
-                />
-                <div className="grid grid-cols-2 gap-3">
-                  <MaterialInput
-                    type="number"
-                    fieldSize="sm"
-                    ltrNum
-                    min={1}
-                    max={36}
-                    required
-                    label={t(lang, 'تعداد قسط پیش‌فرض', 'Default Installments')}
-                    value={crDefaultInst}
-                    onChange={(e) => setCrDefaultInst(e.target.value)}
-                  />
-                  <MaterialInput
-                    type="number"
-                    fieldSize="sm"
-                    ltrNum
-                    min={1}
-                    max={30}
-                    required
-                    label={t(lang, 'روز سررسید ماهانه (۱-۳۰)', 'Jalali Due Day (1-30)')}
-                    value={crDueDay}
-                    onChange={(e) => setCrDueDay(e.target.value)}
-                  />
-                </div>
-                <MaterialInput
-                  type="text"
-                  fieldSize="sm"
-                  label={t(lang, 'توضیح (اختیاری)', 'Note (Optional)')}
-                  value={crNote}
-                  onChange={(e) => setCrNote(e.target.value)}
-                />
-                <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-[var(--ft-surface-subtle)] border border-[var(--ft-border)]">
-                  <span className="text-xs text-[var(--ft-text-secondary)]">
-                    {t(lang, 'اعتبار فعال و قابل انتخاب در ثبت هزینه', 'Active Credit Line')}
-                  </span>
-                  <GlassSwitch
-                    checked={crActive}
-                    onChange={setCrActive}
-                    ariaLabel={t(lang, 'اعتبار فعال', 'Active Credit Line')}
-                  />
-                </div>
-              </>
-            )}
-
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setAccModalOpen(false)}
-                className="px-4 py-2 text-xs rounded-xl border border-[var(--ft-border)] cursor-pointer"
-              >
-                {t(lang, 'انصراف', 'Cancel')}
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 text-xs font-semibold rounded-xl ft-accent-gradient cursor-pointer"
-              >
-                {t(lang, 'ذخیره', 'Save')}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* DRAWER: Bank Account Transaction History */}
-      {historyAccount && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex justify-end">
-          <div className="glass-surface-high w-full max-w-md h-full p-6 overflow-y-auto space-y-5">
-            <div className="flex items-center justify-between pb-4 border-b border-[var(--ft-border)]">
-              <div>
-                <h3 className="text-base font-semibold text-[var(--ft-text-primary)]">{historyAccount.name}</h3>
-                <div className="font-num text-sm text-[var(--ft-accent)]">
-                  {formatMoney(historyAccount.balance, historyAccount.currency, lang, false, isPrivate)}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setHistoryAccount(null)}
-                className="px-3 py-1.5 text-xs rounded-lg border border-[var(--ft-border)] cursor-pointer"
-              >
-                {t(lang, 'بستن', 'Close')}
-              </button>
-            </div>
-
-            <div className="divide-y divide-[var(--ft-border)]">
-              {state.transactions
-                .filter((tx) => tx.accountId === historyAccount.id || tx.toAccountId === historyAccount.id)
-                .map((tx) => (
-                  <div key={tx.id} className="py-3 flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-sm text-[var(--ft-text-primary)]">{tx.note || tx.type}</div>
-                      <div className="text-xs text-[var(--ft-text-muted)]">{formatJalaliDate(tx.date, lang)}</div>
-                    </div>
-                    <div className="font-num text-sm font-semibold">
-                      {formatMoney(tx.amount, tx.currency, lang, false, isPrivate)}
-                    </div>
-                  </div>
-                ))}
-            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* MODAL: Add Budget Cap */}
-      {budgetModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <form onSubmit={handleSaveBudget} className="glass-surface-high rounded-2xl p-6 w-full max-w-md space-y-4">
-            <h3 className="text-base font-semibold text-[var(--ft-text-primary)]">
-              {t(lang, 'افزودن سقف بودجه دسته‌بندی', 'Add Category Budget Cap')}
-            </h3>
-            <MaterialInput
-              type="text"
-              required
-              label={t(lang, 'نام دسته', 'Category Name')}
-              placeholder={t(lang, 'مثلاً تفریح و سفر', 'e.g. Travel')}
-              value={bName}
-              onChange={(e) => setBName(e.target.value)}
-            />
-            <GlassSelect
-              className="w-full"
-              value={bAccountId}
-              onChange={setBAccountId}
-              options={state.bankAccounts.map((a) => ({
-                value: a.id,
-                label: a.name,
-                hint: formatMoney(a.balance, a.currency, lang, false, isPrivate),
-              }))}
-            />
-            <MaterialInput
-              type="number"
-              min="1"
-              max="100"
-              required
-              ltrNum
-              label={t(lang, 'درصد از موجودی حساب مبدأ', '% of Source Account')}
-              value={bPercent}
-              onChange={(e) => setBPercent(e.target.value)}
-              error={
-                bPercent !== '' && (Number(bPercent) <= 0 || Number(bPercent) > 100)
-                  ? t(lang, 'درصد باید بین ۱ تا ۱۰۰ باشد', 'Must be between 1 and 100')
-                  : undefined
-              }
-            />
-            <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-[var(--ft-surface-subtle)] border border-[var(--ft-border)]">
-              <span className="text-xs text-[var(--ft-text-secondary)]">
-                {t(lang, 'انتقال مانده مصرف‌نشده به ماه بعد (Rollover)', 'Rollover unused balance')}
-              </span>
-              <GlassSwitch
-                checked={bRollover}
-                onChange={setBRollover}
-                ariaLabel={t(lang, 'انتقال مانده مصرف‌نشده به ماه بعد', 'Rollover unused balance')}
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setBudgetModalOpen(false)}
-                className="px-4 py-2 text-xs rounded-xl border border-[var(--ft-border)] cursor-pointer"
-              >
-                {t(lang, 'انصراف', 'Cancel')}
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 text-xs font-semibold rounded-xl bg-[var(--ft-accent)] text-[var(--ft-accent-fg)] cursor-pointer"
-              >
-                {t(lang, 'ذخیره', 'Save')}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* MODAL: Add Fixed Expense */}
-      {feModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <form onSubmit={handleSaveFixedExpense} className="glass-surface-high rounded-2xl p-6 w-full max-w-md space-y-4">
-            <h3 className="text-base font-semibold text-[var(--ft-text-primary)]">
-              {t(lang, 'افزودن هزینه ثابت ماهانه', 'Add Recurring Fixed Expense')}
-            </h3>
-            <MaterialInput
-              type="text"
-              required
-              label={t(lang, 'عنوان هزینه', 'Title')}
-              value={feTitle}
-              onChange={(e) => setFeTitle(e.target.value)}
-            />
-            <div className="grid grid-cols-2 gap-3 items-start">
+        <div className="grid grid-cols-2 gap-3 items-start">
+          {(() => {
+            const amtNum = Number(txAmount);
+            const srcAcc = state.bankAccounts.find((a) => a.id === txAccountId);
+            const isBankLike = txType !== 'out' || (txPaymentMethod !== 'credit' && txPaymentMethod !== 'person_debt');
+            const txAmtInAccCurrency =
+              isBankLike && srcAcc && txAmount !== '' && Number.isFinite(amtNum)
+                ? convertCurrency(amtNum, txCurrency, srcAcc.currency, usdToman)
+                : 0;
+            const amountError =
+              txAmount !== '' && (!Number.isFinite(amtNum) || amtNum <= 0)
+                ? t(lang, 'مبلغ باید بزرگ‌تر از صفر باشد', 'Must be > 0')
+                : undefined;
+            const amountWarning =
+              !amountError &&
+              isBankLike &&
+              txType !== 'in' &&
+              srcAcc &&
+              txAmount !== '' &&
+              txAmtInAccCurrency > srcAcc.balance
+                ? t(lang, 'مبلغ از موجودی حساب بیشتر است', 'Exceeds account balance')
+                : !amountError && selectedBudgetPreview && selectedBudgetPreview.projectedPct >= 100
+                ? t(lang, 'از سقف بودجه این ماه فراتر می‌رود', 'Exceeds monthly budget cap')
+                : undefined;
+            return (
               <MaterialInput
                 type="number"
                 step="any"
                 required
                 ltrNum
                 label={t(lang, 'مبلغ', 'Amount')}
-                value={feAmount}
-                onChange={(e) => setFeAmount(e.target.value)}
-                error={
-                  feAmount !== '' && Number(feAmount) <= 0
-                    ? t(lang, 'مبلغ نامعتبر است', 'Must be > 0')
-                    : undefined
-                }
+                value={txAmount}
+                onChange={(e) => setTxAmount(e.target.value)}
+                error={amountError}
+                warning={amountWarning}
               />
+            );
+          })()}
+          <div className="md-field">
+            <label className="md-field-label">{t(lang, 'ارز', 'Currency')}</label>
+            <GlassSelect<CurrencyCode>
+              className="w-full"
+              value={txCurrency}
+              onChange={setTxCurrency}
+              options={[
+                { value: 'IRT', label: 'IRT (تومان)' },
+                { value: 'USD', label: 'USD ($)' },
+              ]}
+            />
+          </div>
+        </div>
+
+        {txType === 'out' && txPaymentMethod === 'credit' ? (
+          <div className="grid grid-cols-3 gap-3 items-start">
+            <div className="col-span-2">
+              <label className="text-xs text-[var(--ft-text-muted)] block mb-1">
+                {t(lang, 'خط اعتبار (دیجی‌پی / اسنپ‌پی...)', 'Credit Line')}
+              </label>
+              <GlassSelect
+                className="w-full"
+                value={txCreditLineId}
+                onChange={(id) => {
+                  setTxCreditLineId(id);
+                  const cl = (state.creditLines ?? []).find((c) => c.id === id);
+                  if (cl) {
+                    setTxCurrency(cl.currency);
+                    setTxInstallments(String(cl.defaultInstallments));
+                  }
+                }}
+                options={(state.creditLines ?? []).map((c) => {
+                  const st = summary.creditLinesStatus.find((s) => s.line.id === c.id);
+                  return {
+                    value: c.id,
+                    label: c.title,
+                    hint: formatMoney(st?.availableAmount ?? c.creditLimit, c.currency, lang, true, isPrivate),
+                  };
+                })}
+              />
+            </div>
+            <MaterialInput
+              type="number"
+              fieldSize="sm"
+              ltrNum
+              min={1}
+              max={36}
+              label={t(lang, 'تعداد قسط', 'Installments')}
+              value={txInstallments}
+              onChange={(e) => setTxInstallments(e.target.value)}
+              hint={
+                Number(txAmount) > 0 && Number(txInstallments) > 0
+                  ? `${formatMoney(Number(txAmount) / Number(txInstallments), txCurrency, lang, true, isPrivate)} / ${t(lang, 'قسط', 'mo')}`
+                  : undefined
+              }
+            />
+          </div>
+        ) : txType === 'out' && txPaymentMethod === 'person_debt' ? (
+          <div>
+            <label className="text-xs text-[var(--ft-text-muted)] block mb-1">
+              {t(lang, 'شخص قرض‌دهنده (ثبت خودکار در دفتر اشخاص)', 'Creditor Person')}
+            </label>
+            <GlassSelect
+              className="w-full"
+              value={txPersonId}
+              onChange={setTxPersonId}
+              options={(state.people ?? []).map((p) => ({
+                value: p.id,
+                label: p.name,
+              }))}
+            />
+          </div>
+        ) : (
+          <div>
+            <label className="text-xs text-[var(--ft-text-muted)] block mb-1">
+              {txType === 'transfer' ? t(lang, 'حساب مبدأ', 'From Account') : t(lang, 'حساب بانکی / نقدی / دلاری', 'Account')}
+            </label>
+            <GlassSelect
+              className="w-full"
+              value={txAccountId}
+              onChange={setTxAccountId}
+              options={state.bankAccounts.map((a) => ({
+                value: a.id,
+                label: `${a.name} (${a.currency})`,
+                hint: formatMoney(a.balance, a.currency, lang, false, isPrivate),
+              }))}
+            />
+          </div>
+        )}
+
+        {txType === 'transfer' && (
+          <div>
+            <label className="text-xs text-[var(--ft-text-muted)] block mb-1 flex items-center gap-1">
+              <ArrowLeftRight className="w-3.5 h-3.5 text-[var(--ft-accent)]" />
+              <span>{t(lang, 'حساب مقصد (تبدیل خودکار با نرخ دلار)', 'To Account (Auto-FX)')}</span>
+            </label>
+            <GlassSelect
+              className="w-full"
+              value={txToAccountId}
+              onChange={setTxToAccountId}
+              options={state.bankAccounts.map((a) => ({
+                value: a.id,
+                label: `${a.name} (${a.currency})`,
+                hint: formatMoney(a.balance, a.currency, lang, false, isPrivate),
+              }))}
+            />
+          </div>
+        )}
+
+        {txType === 'out' && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+            <div className="md-field">
+              <label className="md-field-label">{t(lang, 'لیبل هزینه', 'Expense Label')}</label>
+              <GlassSelect
+                size="sm"
+                className="w-full"
+                value={txCategoryLabel}
+                onChange={setTxCategoryLabel}
+                options={[
+                  { value: 'خوراک و کافه', label: t(lang, 'خوراک و کافه', 'Food & Cafe') },
+                  { value: 'خرید کالا', label: t(lang, 'خرید کالا', 'Shopping') },
+                  { value: 'مسکن و قبوض', label: t(lang, 'مسکن و قبوض', 'Housing & Bills') },
+                  { value: 'حمل‌ونقل', label: t(lang, 'حمل‌ونقل', 'Transport') },
+                  { value: 'ابزار و سرور', label: t(lang, 'ابزار و سرور', 'Tools & Server') },
+                  { value: 'درمان', label: t(lang, 'درمان', 'Health') },
+                  { value: 'سایر', label: t(lang, 'سایر', 'Other') },
+                ]}
+              />
+            </div>
+            {state.budgetCaps.length > 0 && (
               <div className="md-field">
-                <label className="md-field-label">{t(lang, 'ارز', 'Currency')}</label>
-                <GlassSelect<CurrencyCode>
+                <label className="md-field-label">{t(lang, 'سقف بودجه (اختیاری)', 'Budget Cap (Opt.)')}</label>
+                <GlassSelect
+                  size="sm"
                   className="w-full"
-                  value={feCurrency}
-                  onChange={setFeCurrency}
+                  value={txBudgetId}
+                  onChange={setTxBudgetId}
                   options={[
-                    { value: 'IRT', label: 'IRT (تومان)' },
-                    { value: 'USD', label: 'USD ($)' },
+                    { value: '', label: t(lang, 'بدون اتصال به بودجه', 'No Budget Cap') },
+                    ...state.budgetCaps.map((b) => ({
+                      value: b.id,
+                      label: b.categoryName,
+                    })),
                   ]}
                 />
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3 items-center">
-              <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[var(--ft-surface-subtle)] border border-[var(--ft-border)]">
-                <span className="text-xs text-[var(--ft-text-secondary)]">
-                  {t(lang, 'تکرار ماهانه', 'Monthly Recurring')}
-                </span>
-                <GlassSwitch
-                  checked={feRecurring}
-                  onChange={setFeRecurring}
-                  ariaLabel={t(lang, 'تکرار ماهانه', 'Monthly Recurring')}
-                />
-              </div>
-              <MaterialInput
-                type="number"
-                fieldSize="sm"
-                ltrNum
-                min="1"
-                max="30"
-                label={t(lang, 'روز ماه (۱-۳۰)', 'Day (1-30)')}
-                value={feDay}
-                onChange={(e) => setFeDay(e.target.value)}
-                error={
-                  feDay !== '' && (Number(feDay) < 1 || Number(feDay) > 30)
-                    ? t(lang, 'روز باید ۱ تا ۳۰ باشد', 'Day must be 1–30')
-                    : undefined
-                }
-              />
-            </div>
-            <GlassSelect
-              className="w-full"
-              size="sm"
-              value={feCategoryId}
-              onChange={setFeCategoryId}
-              options={[
-                { value: '', label: t(lang, 'بدون اتصال به بودجه', 'No Budget Link') },
-                ...state.budgetCaps.map((b) => ({
-                  value: b.id,
-                  label: b.categoryName,
-                })),
-              ]}
-            />
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setFeModalOpen(false)}
-                className="px-4 py-2 text-xs rounded-xl border border-[var(--ft-border)] cursor-pointer"
-              >
-                {t(lang, 'انصراف', 'Cancel')}
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 text-xs font-semibold rounded-xl bg-[var(--ft-accent)] text-[var(--ft-accent-fg)] cursor-pointer"
-              >
-                {t(lang, 'ذخیره', 'Save')}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+            )}
+          </div>
+        )}
 
-      {/* MODAL: Add Loan / Debt / Receivable */}
-      {loanModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <form onSubmit={handleSaveLoan} className="glass-surface-high rounded-2xl p-6 w-full max-w-md space-y-4">
-            <h3 className="text-base font-semibold text-[var(--ft-text-primary)]">
-              {t(lang, 'ثبت وام / قرض / طلب', 'Add Loan / Debt / Receivable')}
-            </h3>
+        {txType === 'out' && selectedBudgetPreview && (
+          <div
+            className={`text-xs flex items-center gap-1.5 ${
+              selectedBudgetPreview.projectedPct >= 100
+                ? 'text-[var(--ft-danger)]'
+                : selectedBudgetPreview.projectedPct >= 80
+                ? 'text-[var(--ft-warning)]'
+                : 'text-[var(--ft-positive)]'
+            }`}
+          >
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            <span>
+              {t(
+                lang,
+                `مصرف جدید این بودجه: ${selectedBudgetPreview.projectedPct}%`,
+                `Projected budget usage: ${selectedBudgetPreview.projectedPct}%`
+              )}
+            </span>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+          <JalaliDatePicker
+            lang={lang}
+            fieldSize="sm"
+            label={t(lang, 'تاریخ (جلالی)', 'Date')}
+            value={txDate}
+            onChange={setTxDate}
+          />
+          <MaterialInput
+            type="text"
+            fieldSize="sm"
+            label={t(lang, 'یادداشت / شرح', 'Note')}
+            placeholder={t(lang, 'مثلاً خرید، شام، قبض...', 'e.g. Purchase, Dinner...')}
+            value={txNote}
+            onChange={(e) => setTxNote(e.target.value)}
+          />
+        </div>
+      </ResponsiveModalSheet>
+
+      {/* MODAL / SHEET: Unified Add / Edit Account (Bank/Wallet/Cash OR BNPL Credit Line) */}
+      <ResponsiveModalSheet
+        open={accModalOpen}
+        onClose={() => setAccModalOpen(false)}
+        title={
+          accModalMode === 'credit'
+            ? editingCreditId
+              ? t(lang, 'ویرایش خط اعتبار اقساطی', 'Edit Credit Line')
+              : t(lang, 'افزودن خط اعتبار اقساطی', 'Add BNPL Credit Line')
+            : editingAccId
+            ? t(lang, 'ویرایش حساب مالی', 'Edit Account')
+            : t(lang, 'افزودن حساب / اعتبار جدید', 'Add Account / Credit Line')
+        }
+        maxWidthClass="md:max-w-md"
+        asForm
+        onSubmit={accModalMode === 'credit' ? handleSaveCreditLine : handleSaveAccount}
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setAccModalOpen(false)}
+              className="min-h-[44px] px-4 py-2 text-xs font-medium rounded-xl border border-[var(--ft-border)] cursor-pointer"
+            >
+              {t(lang, 'انصراف', 'Cancel')}
+            </button>
+            <button
+              type="submit"
+              className="min-h-[44px] flex-1 sm:flex-none px-5 py-2 text-xs font-semibold rounded-xl ft-accent-gradient cursor-pointer"
+            >
+              {t(lang, 'ذخیره', 'Save')}
+            </button>
+          </div>
+        }
+      >
+        {/* Unified Mode Switcher when creating new entry */}
+        {!editingAccId && !editingCreditId && (
+          <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[var(--ft-surface-subtle)] border border-[var(--ft-border)]">
+            <button
+              type="button"
+              onClick={() => setAccModalMode('bank_wallet')}
+              className={`min-h-[38px] py-2 text-xs font-medium rounded-lg cursor-pointer transition-colors ${
+                accModalMode === 'bank_wallet'
+                  ? 'bg-[var(--ft-accent)] text-[var(--ft-accent-fg)] font-semibold'
+                  : 'text-[var(--ft-text-secondary)]'
+              }`}
+            >
+              {t(lang, 'حساب بانکی / نقدی / کیف‌پول', 'Bank / Cash / Wallet')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setAccModalMode('credit')}
+              className={`min-h-[38px] py-2 text-xs font-medium rounded-lg cursor-pointer transition-colors ${
+                accModalMode === 'credit'
+                  ? 'bg-[var(--ft-accent)] text-[var(--ft-accent-fg)] font-semibold'
+                  : 'text-[var(--ft-text-secondary)]'
+              }`}
+            >
+              {t(lang, 'اعتبار اقساطی (دیجی‌پی...)', 'Credit Line (BNPL)')}
+            </button>
+          </div>
+        )}
+
+        {accModalMode === 'bank_wallet' ? (
+          <>
+            <MaterialInput
+              type="text"
+              required
+              label={t(lang, 'نام حساب', 'Account Name')}
+              placeholder={t(lang, 'مثلاً بانک ملت', 'e.g. Main Bank')}
+              value={accName}
+              onChange={(e) => setAccName(e.target.value)}
+            />
             <div className="grid grid-cols-2 gap-3">
-              <GlassSelect<LoanKind>
+              <GlassSelect<BankAccountType>
                 className="w-full"
-                value={lKind}
-                onChange={setLKind}
+                value={accType}
+                onChange={setAccType}
                 options={[
-                  { value: 'loan', label: t(lang, 'وام', 'Loan') },
-                  { value: 'debt', label: t(lang, 'قرض / بدهی', 'Debt') },
-                  { value: 'receivable', label: t(lang, 'طلب', 'Receivable') },
+                  { value: 'bank', label: t(lang, 'بانکی', 'Bank') },
+                  { value: 'cash', label: t(lang, 'نقد', 'Cash') },
+                  { value: 'wallet', label: t(lang, 'کیف پول', 'Wallet') },
                 ]}
               />
               <GlassSelect<CurrencyCode>
                 className="w-full"
-                value={lCurrency}
-                onChange={setLCurrency}
+                value={accCurrency}
+                onChange={setAccCurrency}
                 options={[
                   { value: 'IRT', label: 'IRT (تومان)' },
                   { value: 'USD', label: 'USD ($)' },
@@ -3972,109 +3893,504 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
               />
             </div>
             <MaterialInput
+              type="number"
+              step="any"
+              required
+              ltrNum
+              label={t(lang, 'موجودی فعلی', 'Current Balance')}
+              value={accBalance}
+              onChange={(e) => setAccBalance(e.target.value)}
+              error={
+                accBalance !== '' && Number(accBalance) < 0
+                  ? t(lang, 'موجودی نمی‌تواند منفی باشد', 'Balance cannot be negative')
+                  : undefined
+              }
+            />
+            <MaterialInput
+              type="text"
+              label={t(lang, 'یادداشت (اختیاری)', 'Note (optional)')}
+              value={accNote}
+              onChange={(e) => setAccNote(e.target.value)}
+            />
+          </>
+        ) : (
+          <>
+            <MaterialInput
               type="text"
               required
-              label={t(lang, 'عنوان', 'Title')}
-              value={lTitle}
-              onChange={(e) => setLTitle(e.target.value)}
+              label={t(lang, 'عنوان اعتبار', 'Credit Title')}
+              placeholder={t(lang, 'مثلاً اعتبار دیجی‌پی', 'e.g. Digipay Credit')}
+              value={crTitle}
+              onChange={(e) => setCrTitle(e.target.value)}
+            />
+            <div className="grid grid-cols-2 gap-3 items-start">
+              <div className="md-field">
+                <label className="md-field-label">{t(lang, 'ارائه‌دهنده', 'Provider')}</label>
+                <GlassSelect<CreditProvider>
+                  className="w-full"
+                  value={crProvider}
+                  onChange={setCrProvider}
+                  options={[
+                    { value: 'digipay', label: t(lang, 'دیجی‌پی', 'Digipay') },
+                    { value: 'snapppay', label: t(lang, 'اسنپ‌پی', 'SnappPay') },
+                    { value: 'tara', label: t(lang, 'تارا', 'Tara') },
+                    { value: 'card', label: t(lang, 'کارت اعتباری بانکی', 'Bank Credit Card') },
+                    { value: 'other', label: t(lang, 'سایر', 'Other') },
+                  ]}
+                />
+              </div>
+              <div className="md-field">
+                <label className="md-field-label">{t(lang, 'ارز', 'Currency')}</label>
+                <GlassSelect<CurrencyCode>
+                  className="w-full"
+                  value={crCurrency}
+                  onChange={setCrCurrency}
+                  options={[
+                    { value: 'IRT', label: 'IRT (تومان)' },
+                    { value: 'USD', label: 'USD ($)' },
+                  ]}
+                />
+              </div>
+            </div>
+            <MaterialInput
+              type="number"
+              required
+              ltrNum
+              step="any"
+              label={t(lang, 'سقف کل اعتبار', 'Total Credit Limit')}
+              value={crLimit}
+              onChange={(e) => setCrLimit(e.target.value)}
+              error={
+                crLimit !== '' && Number(crLimit) <= 0
+                  ? t(lang, 'سقف اعتبار باید > ۰ باشد', 'Must be > 0')
+                  : undefined
+              }
             />
             <div className="grid grid-cols-2 gap-3">
               <MaterialInput
                 type="number"
-                required
-                ltrNum
-                label={t(lang, 'مبلغ کل', 'Total Amount')}
-                value={lTotalAmount}
-                onChange={(e) => setLTotalAmount(e.target.value)}
-                error={
-                  lTotalAmount !== '' && Number(lTotalAmount) <= 0
-                    ? t(lang, 'باید > ۰ باشد', 'Must be > 0')
-                    : undefined
-                }
-              />
-              <MaterialInput
-                type="number"
-                required
-                ltrNum
-                label={t(lang, 'مبلغ هر قسط', 'Installment')}
-                value={lInstallmentAmount}
-                onChange={(e) => setLInstallmentAmount(e.target.value)}
-                error={
-                  lInstallmentAmount !== '' && Number(lInstallmentAmount) <= 0
-                    ? t(lang, 'باید > ۰ باشد', 'Must be > 0')
-                    : undefined
-                }
-              />
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <MaterialInput
-                type="number"
                 fieldSize="sm"
                 ltrNum
-                min="1"
+                min={1}
+                max={36}
                 required
-                label={t(lang, 'تعداد اقساط', 'Installments')}
-                value={lInstallments}
-                onChange={(e) => setLInstallments(e.target.value)}
-                error={
-                  lInstallments !== '' && Number(lInstallments) < 1
-                    ? t(lang, 'حداقل ۱', 'Min 1')
-                    : undefined
-                }
+                label={t(lang, 'تعداد قسط پیش‌فرض', 'Default Installments')}
+                value={crDefaultInst}
+                onChange={(e) => setCrDefaultInst(e.target.value)}
               />
               <MaterialInput
                 type="number"
                 fieldSize="sm"
                 ltrNum
-                min="0"
-                label={t(lang, 'نرخ بهره %', 'Rate %')}
-                value={lPriorityRate}
-                onChange={(e) => setLPriorityRate(e.target.value)}
-              />
-              <JalaliDatePicker
-                lang={lang}
-                fieldSize="sm"
-                label={t(lang, 'سررسید', 'Due Date')}
-                value={lDueDate}
-                onChange={setLDueDate}
+                min={1}
+                max={30}
+                required
+                label={t(lang, 'روز سررسید ماهانه (۱-۳۰)', 'Jalali Due Day (1-30)')}
+                value={crDueDay}
+                onChange={(e) => setCrDueDay(e.target.value)}
               />
             </div>
             <MaterialInput
               type="text"
               fieldSize="sm"
-              label={t(lang, 'دوره', 'Period')}
-              placeholder={t(lang, 'مثلاً ماهانه', 'e.g. Monthly')}
-              value={lPeriod}
-              onChange={(e) => setLPeriod(e.target.value)}
+              label={t(lang, 'توضیح (اختیاری)', 'Note (Optional)')}
+              value={crNote}
+              onChange={(e) => setCrNote(e.target.value)}
             />
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-[var(--ft-surface-subtle)] border border-[var(--ft-border)]">
+              <span className="text-xs text-[var(--ft-text-secondary)]">
+                {t(lang, 'اعتبار فعال و قابل انتخاب در ثبت هزینه', 'Active Credit Line')}
+              </span>
+              <GlassSwitch
+                checked={crActive}
+                onChange={setCrActive}
+                ariaLabel={t(lang, 'اعتبار فعال', 'Active Credit Line')}
+              />
+            </div>
+          </>
+        )}
+      </ResponsiveModalSheet>
+
+      {/* DRAWER / SHEET: Bank Account Transaction History */}
+      <ResponsiveModalSheet
+        open={Boolean(historyAccount)}
+        onClose={() => setHistoryAccount(null)}
+        desktopVariant="side-drawer"
+        title={historyAccount?.name}
+        subtitle={
+          historyAccount
+            ? formatMoney(historyAccount.balance, historyAccount.currency, lang, false, isPrivate)
+            : undefined
+        }
+        footer={
+          <button
+            type="button"
+            onClick={() => setHistoryAccount(null)}
+            className="w-full min-h-[44px] px-4 py-2 text-xs font-semibold rounded-xl border border-[var(--ft-border)] hover:bg-[var(--ft-surface-hover)] cursor-pointer"
+          >
+            {t(lang, 'بستن', 'Close')}
+          </button>
+        }
+      >
+        {historyAccount && (
+          <div className="divide-y divide-[var(--ft-border)]">
+            {state.transactions.filter(
+              (tx) => tx.accountId === historyAccount.id || tx.toAccountId === historyAccount.id
+            ).length === 0 ? (
+              <div className="py-10 text-center text-xs text-[var(--ft-text-muted)]">
+                {t(lang, 'تراکنشی برای این حساب ثبت نشده است.', 'No transactions recorded for this account.')}
+              </div>
+            ) : (
+              state.transactions
+                .filter((tx) => tx.accountId === historyAccount.id || tx.toAccountId === historyAccount.id)
+                .map((tx) => (
+                  <div key={tx.id} className="py-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm text-[var(--ft-text-primary)] truncate">{tx.note || tx.type}</div>
+                      <div className="text-xs text-[var(--ft-text-muted)]">{formatJalaliDate(tx.date, lang)}</div>
+                    </div>
+                    <div className="font-num text-sm font-semibold shrink-0">
+                      {formatMoney(tx.amount, tx.currency, lang, false, isPrivate)}
+                    </div>
+                  </div>
+                ))
+            )}
+          </div>
+        )}
+      </ResponsiveModalSheet>
+
+      {/* MODAL / SHEET: Add Budget Cap */}
+      <ResponsiveModalSheet
+        open={budgetModalOpen}
+        onClose={() => setBudgetModalOpen(false)}
+        title={t(lang, 'افزودن سقف بودجه دسته‌بندی', 'Add Category Budget Cap')}
+        maxWidthClass="md:max-w-md"
+        asForm
+        onSubmit={handleSaveBudget}
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setBudgetModalOpen(false)}
+              className="min-h-[44px] px-4 py-2 text-xs font-medium rounded-xl border border-[var(--ft-border)] cursor-pointer"
+            >
+              {t(lang, 'انصراف', 'Cancel')}
+            </button>
+            <button
+              type="submit"
+              className="min-h-[44px] flex-1 sm:flex-none px-5 py-2 text-xs font-semibold rounded-xl bg-[var(--ft-accent)] text-[var(--ft-accent-fg)] cursor-pointer"
+            >
+              {t(lang, 'ذخیره', 'Save')}
+            </button>
+          </div>
+        }
+      >
+        <MaterialInput
+          type="text"
+          required
+          label={t(lang, 'نام دسته', 'Category Name')}
+          placeholder={t(lang, 'مثلاً تفریح و سفر', 'e.g. Travel')}
+          value={bName}
+          onChange={(e) => setBName(e.target.value)}
+        />
+        <GlassSelect
+          className="w-full"
+          value={bAccountId}
+          onChange={setBAccountId}
+          options={state.bankAccounts.map((a) => ({
+            value: a.id,
+            label: a.name,
+            hint: formatMoney(a.balance, a.currency, lang, false, isPrivate),
+          }))}
+        />
+        <MaterialInput
+          type="number"
+          min="1"
+          max="100"
+          required
+          ltrNum
+          label={t(lang, 'درصد از موجودی حساب مبدأ', '% of Source Account')}
+          value={bPercent}
+          onChange={(e) => setBPercent(e.target.value)}
+          error={
+            bPercent !== '' && (Number(bPercent) <= 0 || Number(bPercent) > 100)
+              ? t(lang, 'درصد باید بین ۱ تا ۱۰۰ باشد', 'Must be between 1 and 100')
+              : undefined
+          }
+        />
+        <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-[var(--ft-surface-subtle)] border border-[var(--ft-border)]">
+          <span className="text-xs text-[var(--ft-text-secondary)]">
+            {t(lang, 'انتقال مانده مصرف‌نشده به ماه بعد (Rollover)', 'Rollover unused balance')}
+          </span>
+          <GlassSwitch
+            checked={bRollover}
+            onChange={setBRollover}
+            ariaLabel={t(lang, 'انتقال مانده مصرف‌نشده به ماه بعد', 'Rollover unused balance')}
+          />
+        </div>
+      </ResponsiveModalSheet>
+
+      {/* MODAL / SHEET: Add Fixed Expense */}
+      <ResponsiveModalSheet
+        open={feModalOpen}
+        onClose={() => setFeModalOpen(false)}
+        title={t(lang, 'افزودن هزینه ثابت ماهانه', 'Add Recurring Fixed Expense')}
+        maxWidthClass="md:max-w-md"
+        asForm
+        onSubmit={handleSaveFixedExpense}
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setFeModalOpen(false)}
+              className="min-h-[44px] px-4 py-2 text-xs font-medium rounded-xl border border-[var(--ft-border)] cursor-pointer"
+            >
+              {t(lang, 'انصراف', 'Cancel')}
+            </button>
+            <button
+              type="submit"
+              className="min-h-[44px] flex-1 sm:flex-none px-5 py-2 text-xs font-semibold rounded-xl bg-[var(--ft-accent)] text-[var(--ft-accent-fg)] cursor-pointer"
+            >
+              {t(lang, 'ذخیره', 'Save')}
+            </button>
+          </div>
+        }
+      >
+        <MaterialInput
+          type="text"
+          required
+          label={t(lang, 'عنوان هزینه', 'Title')}
+          value={feTitle}
+          onChange={(e) => setFeTitle(e.target.value)}
+        />
+        <div className="grid grid-cols-2 gap-3 items-start">
+          <MaterialInput
+            type="number"
+            step="any"
+            required
+            ltrNum
+            label={t(lang, 'مبلغ', 'Amount')}
+            value={feAmount}
+            onChange={(e) => setFeAmount(e.target.value)}
+            error={
+              feAmount !== '' && Number(feAmount) <= 0
+                ? t(lang, 'مبلغ نامعتبر است', 'Must be > 0')
+                : undefined
+            }
+          />
+          <div className="md-field">
+            <label className="md-field-label">{t(lang, 'ارز', 'Currency')}</label>
+            <GlassSelect<CurrencyCode>
+              className="w-full"
+              value={feCurrency}
+              onChange={setFeCurrency}
+              options={[
+                { value: 'IRT', label: 'IRT (تومان)' },
+                { value: 'USD', label: 'USD ($)' },
+              ]}
+            />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3 items-center">
+          <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[var(--ft-surface-subtle)] border border-[var(--ft-border)]">
+            <span className="text-xs text-[var(--ft-text-secondary)]">
+              {t(lang, 'تکرار ماهانه', 'Monthly Recurring')}
+            </span>
+            <GlassSwitch
+              checked={feRecurring}
+              onChange={setFeRecurring}
+              ariaLabel={t(lang, 'تکرار ماهانه', 'Monthly Recurring')}
+            />
+          </div>
+          <MaterialInput
+            type="number"
+            fieldSize="sm"
+            ltrNum
+            min="1"
+            max="30"
+            label={t(lang, 'روز ماه (۱-۳۰)', 'Day (1-30)')}
+            value={feDay}
+            onChange={(e) => setFeDay(e.target.value)}
+            error={
+              feDay !== '' && (Number(feDay) < 1 || Number(feDay) > 30)
+                ? t(lang, 'روز باید ۱ تا ۳۰ باشد', 'Day must be 1–30')
+                : undefined
+            }
+          />
+        </div>
+        <GlassSelect
+          className="w-full"
+          size="sm"
+          value={feCategoryId}
+          onChange={setFeCategoryId}
+          options={[
+            { value: '', label: t(lang, 'بدون اتصال به بودجه', 'No Budget Link') },
+            ...state.budgetCaps.map((b) => ({
+              value: b.id,
+              label: b.categoryName,
+            })),
+          ]}
+        />
+      </ResponsiveModalSheet>
+
+      {/* MODAL / SHEET: Add Loan / Debt / Receivable */}
+      <ResponsiveModalSheet
+        open={loanModalOpen}
+        onClose={() => setLoanModalOpen(false)}
+        title={t(lang, 'ثبت وام / قرض / طلب', 'Add Loan / Debt / Receivable')}
+        maxWidthClass="md:max-w-md"
+        asForm
+        onSubmit={handleSaveLoan}
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setLoanModalOpen(false)}
+              className="min-h-[44px] px-4 py-2 text-xs font-medium rounded-xl border border-[var(--ft-border)] cursor-pointer"
+            >
+              {t(lang, 'انصراف', 'Cancel')}
+            </button>
+            <button
+              type="submit"
+              className="min-h-[44px] flex-1 sm:flex-none px-5 py-2 text-xs font-semibold rounded-xl bg-[var(--ft-accent)] text-[var(--ft-accent-fg)] cursor-pointer"
+            >
+              {t(lang, 'ثبت', 'Save')}
+            </button>
+          </div>
+        }
+      >
+        <div className="grid grid-cols-2 gap-3">
+          <GlassSelect<LoanKind>
+            className="w-full"
+            value={lKind}
+            onChange={setLKind}
+            options={[
+              { value: 'loan', label: t(lang, 'وام', 'Loan') },
+              { value: 'debt', label: t(lang, 'قرض / بدهی', 'Debt') },
+              { value: 'receivable', label: t(lang, 'طلب', 'Receivable') },
+            ]}
+          />
+          <GlassSelect<CurrencyCode>
+            className="w-full"
+            value={lCurrency}
+            onChange={setLCurrency}
+            options={[
+              { value: 'IRT', label: 'IRT (تومان)' },
+              { value: 'USD', label: 'USD ($)' },
+            ]}
+          />
+        </div>
+        <MaterialInput
+          type="text"
+          required
+          label={t(lang, 'عنوان', 'Title')}
+          value={lTitle}
+          onChange={(e) => setLTitle(e.target.value)}
+        />
+        <div className="grid grid-cols-2 gap-3">
+          <MaterialInput
+            type="number"
+            required
+            ltrNum
+            label={t(lang, 'مبلغ کل', 'Total Amount')}
+            value={lTotalAmount}
+            onChange={(e) => setLTotalAmount(e.target.value)}
+            error={
+              lTotalAmount !== '' && Number(lTotalAmount) <= 0
+                ? t(lang, 'باید > ۰ باشد', 'Must be > 0')
+                : undefined
+            }
+          />
+          <MaterialInput
+            type="number"
+            required
+            ltrNum
+            label={t(lang, 'مبلغ هر قسط', 'Installment')}
+            value={lInstallmentAmount}
+            onChange={(e) => setLInstallmentAmount(e.target.value)}
+            error={
+              lInstallmentAmount !== '' && Number(lInstallmentAmount) <= 0
+                ? t(lang, 'باید > ۰ باشد', 'Must be > 0')
+                : undefined
+            }
+          />
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <MaterialInput
+            type="number"
+            fieldSize="sm"
+            ltrNum
+            min="1"
+            required
+            label={t(lang, 'تعداد اقساط', 'Installments')}
+            value={lInstallments}
+            onChange={(e) => setLInstallments(e.target.value)}
+            error={
+              lInstallments !== '' && Number(lInstallments) < 1
+                ? t(lang, 'حداقل ۱', 'Min 1')
+                : undefined
+            }
+          />
+          <MaterialInput
+            type="number"
+            fieldSize="sm"
+            ltrNum
+            min="0"
+            label={t(lang, 'نرخ بهره %', 'Rate %')}
+            value={lPriorityRate}
+            onChange={(e) => setLPriorityRate(e.target.value)}
+          />
+          <JalaliDatePicker
+            lang={lang}
+            fieldSize="sm"
+            label={t(lang, 'سررسید', 'Due Date')}
+            value={lDueDate}
+            onChange={setLDueDate}
+          />
+        </div>
+        <MaterialInput
+          type="text"
+          fieldSize="sm"
+          label={t(lang, 'دوره', 'Period')}
+          placeholder={t(lang, 'مثلاً ماهانه', 'e.g. Monthly')}
+          value={lPeriod}
+          onChange={(e) => setLPeriod(e.target.value)}
+        />
+      </ResponsiveModalSheet>
+
+      {/* MODAL / SHEET: Pay Loan Installment */}
+      <ResponsiveModalSheet
+        open={Boolean(payingLoan)}
+        onClose={() => setPayingLoan(null)}
+        title={t(lang, 'پرداخت قسط وام', 'Pay Loan Installment')}
+        subtitle={payingLoan?.title}
+        maxWidthClass="md:max-w-md"
+        footer={
+          payingLoan ? (
+            <div className="flex items-center justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setLoanModalOpen(false)}
-                className="px-4 py-2 text-xs rounded-xl border border-[var(--ft-border)] cursor-pointer"
+                onClick={() => setPayingLoan(null)}
+                className="min-h-[44px] px-4 py-2 text-xs font-medium rounded-xl border border-[var(--ft-border)] cursor-pointer"
               >
                 {t(lang, 'انصراف', 'Cancel')}
               </button>
               <button
-                type="submit"
-                className="px-4 py-2 text-xs font-semibold rounded-xl bg-[var(--ft-accent)] text-[var(--ft-accent-fg)] cursor-pointer"
+                type="button"
+                onClick={() => {
+                  onPayLoanInstallment(payingLoan.id, payAccountId);
+                  setPayingLoan(null);
+                }}
+                className="min-h-[44px] flex-1 sm:flex-none px-5 py-2 text-xs font-semibold rounded-xl bg-[var(--ft-accent)] text-[var(--ft-accent-fg)] cursor-pointer"
               >
-                {t(lang, 'ثبت', 'Save')}
+                {t(lang, 'تایید و پرداخت قسط', 'Confirm Payment')}
               </button>
             </div>
-          </form>
-        </div>
-      )}
-
-      {/* MODAL: Pay Loan Installment */}
-      {payingLoan && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="glass-surface-high rounded-2xl p-6 w-full max-w-md space-y-4">
-            <h3 className="text-base font-semibold text-[var(--ft-text-primary)]">
-              {t(lang, 'پرداخت قسط وام', 'Pay Loan Installment')}
-            </h3>
-            <p className="text-xs text-[var(--ft-text-secondary)]">{payingLoan.title}</p>
-
+          ) : undefined
+        }
+      >
+        {payingLoan && (
+          <>
             <div>
               <label className="text-xs text-[var(--ft-text-muted)] block mb-1">
                 {t(lang, 'انتخاب حساب بانکی مبدأ', 'Select Bank Account')}
@@ -4123,251 +4439,264 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                 </div>
               );
             })()}
+          </>
+        )}
+      </ResponsiveModalSheet>
 
-            <div className="flex justify-end gap-2 pt-2">
+      {/* MODAL / SHEET: Add / Edit Person Contact */}
+      <ResponsiveModalSheet
+        open={personModalOpen}
+        onClose={() => setPersonModalOpen(false)}
+        title={
+          editingPersonId
+            ? t(lang, 'ویرایش مشخصات شخص', 'Edit Person')
+            : t(lang, 'تعریف شخص جدید در دفتر حساب', 'Add New Person')
+        }
+        maxWidthClass="md:max-w-md"
+        asForm
+        onSubmit={handleSavePerson}
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setPersonModalOpen(false)}
+              className="min-h-[44px] px-4 py-2 text-xs font-medium rounded-xl border border-[var(--ft-border)] cursor-pointer"
+            >
+              {t(lang, 'انصراف', 'Cancel')}
+            </button>
+            <button
+              type="submit"
+              className="min-h-[44px] flex-1 sm:flex-none px-5 py-2 text-xs font-semibold rounded-xl ft-accent-gradient cursor-pointer"
+            >
+              {t(lang, 'ذخیره شخص', 'Save Person')}
+            </button>
+          </div>
+        }
+      >
+        <MaterialInput
+          type="text"
+          required
+          label={t(lang, 'نام و نام خانوادگی', 'Full Name')}
+          value={pName}
+          onChange={(e) => setPName(e.target.value)}
+        />
+        <div className="grid grid-cols-2 gap-3 items-start">
+          <div className="md-field">
+            <label className="md-field-label">{t(lang, 'نقش', 'Role')}</label>
+            <GlassSelect<PersonRole>
+              className="w-full"
+              value={pRole}
+              onChange={setPRole}
+              options={[
+                { value: 'partner', label: t(lang, 'شریک / هم‌تیم', 'Partner') },
+                { value: 'client', label: t(lang, 'مشتری / صرافی', 'Client / Exchange') },
+                { value: 'friend', label: t(lang, 'دوست', 'Friend') },
+                { value: 'family', label: t(lang, 'خانواده', 'Family') },
+                { value: 'other', label: t(lang, 'سایر', 'Other') },
+              ]}
+            />
+          </div>
+          <MaterialInput
+            type="text"
+            ltrNum
+            label={t(lang, 'شماره تماس (اختیاری)', 'Phone (optional)')}
+            value={pPhone}
+            onChange={(e) => setPPhone(e.target.value)}
+          />
+        </div>
+        <MaterialInput
+          type="text"
+          label={t(lang, 'توضیح یا زمینه همکاری', 'Note / Context')}
+          value={pNote}
+          onChange={(e) => setPNote(e.target.value)}
+        />
+      </ResponsiveModalSheet>
+
+      {/* MODAL / SHEET: Log Person Transfer / Ledger Entry */}
+      <ResponsiveModalSheet
+        open={personEntryModalOpen}
+        onClose={() => setPersonEntryModalOpen(false)}
+        title={t(lang, 'ثبت نقل‌وانتقال و گردش حساب شخص', 'Log Person Transfer / Entry')}
+        maxWidthClass="md:max-w-md"
+        asForm
+        onSubmit={handleSavePersonEntry}
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setPersonEntryModalOpen(false)}
+              className="min-h-[44px] px-4 py-2 text-xs font-medium rounded-xl border border-[var(--ft-border)] cursor-pointer"
+            >
+              {t(lang, 'انصراف', 'Cancel')}
+            </button>
+            <button
+              type="submit"
+              className="min-h-[44px] flex-1 sm:flex-none px-5 py-2 text-xs font-semibold rounded-xl ft-accent-gradient cursor-pointer"
+            >
+              {t(lang, 'ثبت در دفتر حساب', 'Save Entry')}
+            </button>
+          </div>
+        }
+      >
+        <div>
+          <label className="text-xs text-[var(--ft-text-muted)] block mb-1">
+            {t(lang, 'انتخاب شخص', 'Select Person')}
+          </label>
+          <GlassSelect
+            className="w-full"
+            value={pePersonId}
+            onChange={setPePersonId}
+            options={(state.people ?? []).map((p) => ({
+              value: p.id,
+              label: p.name,
+            }))}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[var(--ft-surface-subtle)] border border-[var(--ft-border)]">
+          <button
+            type="button"
+            onClick={() => setPeDirection('give')}
+            className={`min-h-[38px] py-2 text-xs font-medium rounded-lg cursor-pointer ${
+              peDirection === 'give'
+                ? 'bg-[var(--ft-positive)] text-white'
+                : 'text-[var(--ft-text-secondary)]'
+            }`}
+          >
+            {t(lang, 'پرداخت به شخص (+طلب ما)', 'Paid to Person (+Owed)')}
+          </button>
+          <button
+            type="button"
+            onClick={() => setPeDirection('receive')}
+            className={`min-h-[38px] py-2 text-xs font-medium rounded-lg cursor-pointer ${
+              peDirection === 'receive'
+                ? 'bg-[var(--ft-danger)] text-white'
+                : 'text-[var(--ft-text-secondary)]'
+            }`}
+          >
+            {t(lang, 'دریافت از شخص (+بدهی ما)', 'Received from Person')}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 items-start">
+          {(() => {
+            const peNum = Number(peAmount);
+            const linkedAcc = state.bankAccounts.find((a) => a.id === peAccountId);
+            const peErr =
+              peAmount !== '' && (!Number.isFinite(peNum) || peNum <= 0)
+                ? t(lang, 'مبلغ باید > ۰ باشد', 'Must be > 0')
+                : undefined;
+            const peWarn =
+              !peErr &&
+              peDirection === 'give' &&
+              linkedAcc &&
+              peAmount !== '' &&
+              convertCurrency(peNum, peCurrency, linkedAcc.currency, usdToman) > linkedAcc.balance
+                ? t(lang, 'از موجودی حساب بیشتر است', 'Exceeds bank balance')
+                : undefined;
+            return (
+              <MaterialInput
+                type="number"
+                step="any"
+                required
+                ltrNum
+                label={t(lang, 'مبلغ', 'Amount')}
+                value={peAmount}
+                onChange={(e) => setPeAmount(e.target.value)}
+                error={peErr}
+                warning={peWarn}
+              />
+            );
+          })()}
+          <div className="md-field">
+            <label className="md-field-label">{t(lang, 'ارز', 'Currency')}</label>
+            <GlassSelect<CurrencyCode>
+              className="w-full"
+              value={peCurrency}
+              onChange={setPeCurrency}
+              options={[
+                { value: 'IRT', label: 'IRT (تومان)' },
+                { value: 'USD', label: 'USD ($)' },
+              ]}
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs text-[var(--ft-text-muted)] block mb-1">
+            {t(lang, 'اتصال به حساب بانکی (اختیاری)', 'Linked Bank Account (Optional)')}
+          </label>
+          <GlassSelect
+            className="w-full"
+            value={peAccountId}
+            onChange={setPeAccountId}
+            options={[
+              { value: '', label: t(lang, 'بدون حساب بانکی (فقط ثبت دفتری)', 'Ledger-Only (No Bank Transfer)') },
+              ...state.bankAccounts.map((a) => ({
+                value: a.id,
+                label: a.name,
+                hint: formatMoney(a.balance, a.currency, lang, false, isPrivate),
+              })),
+            ]}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 items-start">
+          <JalaliDatePicker
+            lang={lang}
+            fieldSize="sm"
+            label={t(lang, 'تاریخ (جلالی)', 'Date')}
+            value={peDate}
+            onChange={setPeDate}
+          />
+          <MaterialInput
+            type="text"
+            fieldSize="sm"
+            label={t(lang, 'شرح', 'Note')}
+            placeholder={t(lang, 'مثلاً تسویه قرض', 'e.g. Settlement')}
+            value={peNote}
+            onChange={(e) => setPeNote(e.target.value)}
+          />
+        </div>
+      </ResponsiveModalSheet>
+
+      {/* MODAL / SHEET: Pay #1 Priority Debt (1-Click Debt-First Execution) */}
+      <ResponsiveModalSheet
+        open={Boolean(priorityPayModalOpen && payoffPlan.priorityQueue[0] && onPayTopPriorityDebt)}
+        onClose={() => setPriorityPayModalOpen(false)}
+        title={
+          <span className="flex items-center gap-2">
+            <ShieldCheck className="w-5 h-5 text-[var(--ft-danger)]" />
+            <span>{t(lang, 'پرداخت بالاترین اولویت بدهی (#1)', 'Pay #1 Priority Debt')}</span>
+          </span>
+        }
+        maxWidthClass="md:max-w-md"
+        footer={
+          payoffPlan.priorityQueue[0] && onPayTopPriorityDebt ? (
+            <div className="flex items-center justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setPayingLoan(null)}
-                className="px-4 py-2 text-xs rounded-xl border border-[var(--ft-border)] cursor-pointer"
+                onClick={() => setPriorityPayModalOpen(false)}
+                className="min-h-[44px] px-4 py-2 text-xs font-medium rounded-xl border border-[var(--ft-border)] cursor-pointer"
               >
                 {t(lang, 'انصراف', 'Cancel')}
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  onPayLoanInstallment(payingLoan.id, payAccountId);
-                  setPayingLoan(null);
+                  onPayTopPriorityDebt(priorityPayAccId);
+                  setPriorityPayModalOpen(false);
                 }}
-                className="px-4 py-2 text-xs font-semibold rounded-xl bg-[var(--ft-accent)] text-[var(--ft-accent-fg)] cursor-pointer"
+                className="min-h-[44px] flex-1 sm:flex-none px-5 py-2 text-xs font-semibold rounded-xl ft-accent-gradient cursor-pointer"
               >
-                {t(lang, 'تایید و پرداخت قسط', 'Confirm Payment')}
+                {t(lang, 'تایید و پرداخت فوری', 'Confirm Priority Payment')}
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: Add / Edit Person Contact */}
-      {personModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <form onSubmit={handleSavePerson} className="glass-surface-high rounded-2xl p-6 w-full max-w-md space-y-4">
-            <h3 className="text-base font-semibold text-[var(--ft-text-primary)]">
-              {editingPersonId ? t(lang, 'ویرایش مشخصات شخص', 'Edit Person') : t(lang, 'تعریف شخص جدید در دفتر حساب', 'Add New Person')}
-            </h3>
-            <MaterialInput
-              type="text"
-              required
-              label={t(lang, 'نام و نام خانوادگی', 'Full Name')}
-              value={pName}
-              onChange={(e) => setPName(e.target.value)}
-            />
-            <div className="grid grid-cols-2 gap-3 items-start">
-              <div className="md-field">
-                <label className="md-field-label">{t(lang, 'نقش', 'Role')}</label>
-                <GlassSelect<PersonRole>
-                  className="w-full"
-                  value={pRole}
-                  onChange={setPRole}
-                  options={[
-                    { value: 'partner', label: t(lang, 'شریک / هم‌تیم', 'Partner') },
-                    { value: 'client', label: t(lang, 'مشتری / صرافی', 'Client / Exchange') },
-                    { value: 'friend', label: t(lang, 'دوست', 'Friend') },
-                    { value: 'family', label: t(lang, 'خانواده', 'Family') },
-                    { value: 'other', label: t(lang, 'سایر', 'Other') },
-                  ]}
-                />
-              </div>
-              <MaterialInput
-                type="text"
-                ltrNum
-                label={t(lang, 'شماره تماس (اختیاری)', 'Phone (optional)')}
-                value={pPhone}
-                onChange={(e) => setPPhone(e.target.value)}
-              />
-            </div>
-            <MaterialInput
-              type="text"
-              label={t(lang, 'توضیح یا زمینه همکاری', 'Note / Context')}
-              value={pNote}
-              onChange={(e) => setPNote(e.target.value)}
-            />
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setPersonModalOpen(false)}
-                className="px-4 py-2 text-xs rounded-xl border border-[var(--ft-border)] cursor-pointer"
-              >
-                {t(lang, 'انصراف', 'Cancel')}
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 text-xs font-semibold rounded-xl ft-accent-gradient cursor-pointer"
-              >
-                {t(lang, 'ذخیره شخص', 'Save Person')}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* MODAL: Log Person Transfer / Ledger Entry */}
-      {personEntryModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <form onSubmit={handleSavePersonEntry} className="glass-surface-high rounded-2xl p-6 w-full max-w-md space-y-4">
-            <h3 className="text-base font-semibold text-[var(--ft-text-primary)]">
-              {t(lang, 'ثبت نقل‌وانتقال و گردش حساب شخص', 'Log Person Transfer / Entry')}
-            </h3>
-
-            <div>
-              <label className="text-xs text-[var(--ft-text-muted)] block mb-1">
-                {t(lang, 'انتخاب شخص', 'Select Person')}
-              </label>
-              <GlassSelect
-                className="w-full"
-                value={pePersonId}
-                onChange={setPePersonId}
-                options={(state.people ?? []).map((p) => ({
-                  value: p.id,
-                  label: p.name,
-                }))}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[var(--ft-surface-subtle)] border border-[var(--ft-border)]">
-              <button
-                type="button"
-                onClick={() => setPeDirection('give')}
-                className={`py-2 text-xs font-medium rounded-lg cursor-pointer ${
-                  peDirection === 'give'
-                    ? 'bg-[var(--ft-positive)] text-white'
-                    : 'text-[var(--ft-text-secondary)]'
-                }`}
-              >
-                {t(lang, 'پرداخت به شخص (+طلب ما)', 'Paid to Person (+Owed)')}
-              </button>
-              <button
-                type="button"
-                onClick={() => setPeDirection('receive')}
-                className={`py-2 text-xs font-medium rounded-lg cursor-pointer ${
-                  peDirection === 'receive'
-                    ? 'bg-[var(--ft-danger)] text-white'
-                    : 'text-[var(--ft-text-secondary)]'
-                }`}
-              >
-                {t(lang, 'دریافت از شخص (+بدهی ما)', 'Received from Person')}
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 items-start">
-              {(() => {
-                const peNum = Number(peAmount);
-                const linkedAcc = state.bankAccounts.find((a) => a.id === peAccountId);
-                const peErr =
-                  peAmount !== '' && (!Number.isFinite(peNum) || peNum <= 0)
-                    ? t(lang, 'مبلغ باید > ۰ باشد', 'Must be > 0')
-                    : undefined;
-                const peWarn =
-                  !peErr &&
-                  peDirection === 'give' &&
-                  linkedAcc &&
-                  peAmount !== '' &&
-                  convertCurrency(peNum, peCurrency, linkedAcc.currency, usdToman) > linkedAcc.balance
-                    ? t(lang, 'از موجودی حساب بیشتر است', 'Exceeds bank balance')
-                    : undefined;
-                return (
-                  <MaterialInput
-                    type="number"
-                    step="any"
-                    required
-                    ltrNum
-                    label={t(lang, 'مبلغ', 'Amount')}
-                    value={peAmount}
-                    onChange={(e) => setPeAmount(e.target.value)}
-                    error={peErr}
-                    warning={peWarn}
-                  />
-                );
-              })()}
-              <div className="md-field">
-                <label className="md-field-label">{t(lang, 'ارز', 'Currency')}</label>
-                <GlassSelect<CurrencyCode>
-                  className="w-full"
-                  value={peCurrency}
-                  onChange={setPeCurrency}
-                  options={[
-                    { value: 'IRT', label: 'IRT (تومان)' },
-                    { value: 'USD', label: 'USD ($)' },
-                  ]}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="text-xs text-[var(--ft-text-muted)] block mb-1">
-                {t(lang, 'اتصال به حساب بانکی (اختیاری)', 'Linked Bank Account (Optional)')}
-              </label>
-              <GlassSelect
-                className="w-full"
-                value={peAccountId}
-                onChange={setPeAccountId}
-                options={[
-                  { value: '', label: t(lang, 'بدون حساب بانکی (فقط ثبت دفتری)', 'Ledger-Only (No Bank Transfer)') },
-                  ...state.bankAccounts.map((a) => ({
-                    value: a.id,
-                    label: a.name,
-                    hint: formatMoney(a.balance, a.currency, lang, false, isPrivate),
-                  })),
-                ]}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 items-start">
-              <JalaliDatePicker
-                lang={lang}
-                fieldSize="sm"
-                label={t(lang, 'تاریخ (جلالی)', 'Date')}
-                value={peDate}
-                onChange={setPeDate}
-              />
-              <MaterialInput
-                type="text"
-                fieldSize="sm"
-                label={t(lang, 'شرح', 'Note')}
-                placeholder={t(lang, 'مثلاً تسویه قرض', 'e.g. Settlement')}
-                value={peNote}
-                onChange={(e) => setPeNote(e.target.value)}
-              />
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setPersonEntryModalOpen(false)}
-                className="px-4 py-2 text-xs rounded-xl border border-[var(--ft-border)] cursor-pointer"
-              >
-                {t(lang, 'انصراف', 'Cancel')}
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 text-xs font-semibold rounded-xl ft-accent-gradient cursor-pointer"
-              >
-                {t(lang, 'ثبت در دفتر حساب', 'Save Entry')}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* MODAL: Pay #1 Priority Debt (1-Click Debt-First Execution) */}
-      {priorityPayModalOpen && payoffPlan.priorityQueue[0] && onPayTopPriorityDebt && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="glass-surface-high rounded-3xl p-6 w-full max-w-md space-y-4">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-5 h-5 text-[var(--ft-danger)]" />
-              <h3 className="text-base font-bold text-[var(--ft-text-primary)]">
-                {t(lang, 'پرداخت بالاترین اولویت بدهی (#1)', 'Pay #1 Priority Debt')}
-              </h3>
-            </div>
+          ) : undefined
+        }
+      >
+        {payoffPlan.priorityQueue[0] && (
+          <>
             <div className="p-3.5 rounded-2xl glass-tile space-y-1">
               <div className="text-xs text-[var(--ft-danger)] font-semibold">
                 {payoffPlan.priorityQueue[0].kind === 'loan_installment'
@@ -4397,29 +4726,9 @@ export const FinanceView: React.FC<FinanceViewProps> = ({
                 }))}
               />
             </div>
-
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setPriorityPayModalOpen(false)}
-                className="px-4 py-2 text-xs rounded-xl border border-[var(--ft-border)] cursor-pointer"
-              >
-                {t(lang, 'انصراف', 'Cancel')}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onPayTopPriorityDebt(priorityPayAccId);
-                  setPriorityPayModalOpen(false);
-                }}
-                className="px-4 py-2 text-xs font-semibold rounded-xl ft-accent-gradient cursor-pointer"
-              >
-                {t(lang, 'تایید و پرداخت فوری', 'Confirm Priority Payment')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </ResponsiveModalSheet>
     </div>
   );
 };

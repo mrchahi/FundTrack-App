@@ -259,7 +259,8 @@ export interface LoanItem {
 
 export type GoalStatus = 'draft' | 'active' | 'completed' | 'archived';
 export type GoalKind = 'item' | 'monetary';
-export type GoalBudgetSource = 'weekly_budget' | 'trading_profit';
+export type GoalDeadlineMode = 'dated' | 'open_until_funded';
+export type GoalBudgetSource = 'weekly_budget' | 'trading_profit' | 'bank_savings';
 
 export interface Goal {
   id: string;
@@ -268,14 +269,18 @@ export interface Goal {
   currency: CurrencyCode;
   targetAmount: number;
   savedAmount: number;
+  deadlineMode?: GoalDeadlineMode; // 'dated' | 'open_until_funded'
   targetDate: string; // ISO date
   budgetSource: GoalBudgetSource;
+  sourceAccountId?: string;
   weeklyBudgetAmount: number;
   priority: number; // 1..5 (1 = Highest)
   allocationPct: number; // 1..100
   autoPriorityBudget?: boolean;
   status: GoalStatus;
   createdAt: string;
+  completedAt?: string;
+  archivedAt?: string;
 }
 
 export interface DailyMissionConfig {
@@ -423,17 +428,29 @@ export interface SystemSettings {
   monthlyExpectedIncomeIrt?: number;
   pinEnabled: boolean;
   pinCode: string;
+  pinHash?: string;
   autoLockMinutes?: number; // 0 = manual only, >0 = idle minutes before locking
   privateMode?: boolean;
+  lanSyncEnabled?: boolean;
+  lanSyncUrl?: string;
+  lanSyncKey?: string;
+  lanAutoFallbackDrive?: boolean;
+  e2eEncryptionEnabled?: boolean;
+  stateUpdatedAt?: string;
+  stateRevision?: number;
+  lastLanSyncAt?: string;
+  lastSyncMode?: 'lan' | 'gdrive' | 'offline';
   eventFileConnected: boolean;
   eaFilePath?: string;
   eaAutoSync?: boolean;
   lastSyncAt: string;
   lastSystemError: string | null;
   lastBackupAt?: string;
-  lastBackupTarget?: 'local' | 'gdrive';
+  lastBackupTarget?: 'local' | 'gdrive' | 'lan';
   readAlertIds?: string[];
   dismissedAlertIds?: string[];
+  newsAlertLeadMinutes?: number;
+  newsAlertSoundEnabled?: boolean;
   localAi?: LocalAiConfig;
 }
 
@@ -556,7 +573,10 @@ export type AssistantActionPayload =
       targetAmount: number;
       currency: CurrencyCode;
       goalKind: GoalKind;
+      deadlineMode: GoalDeadlineMode;
+      targetDate?: string;
       budgetSource: GoalBudgetSource;
+      sourceAccountId?: string;
       weeklyBudgetAmount: number;
       priority: number;
       activateImmediately?: boolean;

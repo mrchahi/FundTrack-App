@@ -1,109 +1,138 @@
-# FundTrack Intelligence & Automation Upgrade Plan
+# طرح بازطراحی موبایل صفحات مالی، اهداف، دستیار هوشمند و ترید بر پایه Material Design 3
 
-This upgrade transforms FundTrack from a reactive tracking dashboard into a proactive decision-support cockpit by closing three critical product gaps: behavioral trading risk guardrails, forward-looking 30-day cashflow & debt payoff simulation, and instant cross-panel navigation with printable periodic scorecards.
+> [!NOTE]
+> این سند نتیجه ارزیابی کامل تجربه کاربری موبایل (از عرض ۴۸۰ پیکسل به بالا) در چهار بخش کلیدی **مالی**، **اهداف و رشد**، **دستیار هوشمند** و **ترید**، همراه با تطبیق استانداردهای **Material Design 3 (M3)** و الگوبرداری از بهترین محصولات مالی و ترید دنیا (**Revolut**، **Monarch Money**، **TradingView**، **TradesViz** و **Gemini Mobile**) است.
 
 ---
-
-## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> Because the interview questions were skipped, this plan locks in the recommended defaults across all three tracks. Request revisions if you prefer a different storage backend or narrower scope before execution.
-
-- **Confirmed Default 1 — Full Intelligence Suite**: Add the Trading Psychology & Setup Matrix, Pre-Trade Lot-Size Calculator, Daily Drawdown Circuit Breaker, Click-to-Filter Journal links, CSV/MT5 Trade Importer, 30-Day Cashflow Runway Chart, Interactive Debt "What-If" Simulator, Global `Ctrl+K` Command Palette, and Weekly/Monthly Digest Report.
-- **Confirmed Default 2 — Risk & Behavior First**: Prioritize real behavioral leak detection (`Emotion × Setup` PnL breakdown) and live pre-trade position sizing linked directly to the user's MT5 equity and daily loss cap.
-- **Confirmed Default 3 — Local-First Persistence**: Retain zero-friction browser storage (`localStorage`) paired with instant JSON snapshot export/restore, avoiding mandatory login walls or server database setup.
-
----
-
-## 1. Overview & Core Concept
-
-- **What It Does**: Connects raw trading logs, psychological tags, and personal finance obligations into active guardrails and forward simulations. Instead of merely displaying past numbers, the cockpit answers *"How much lot size can I safely take right now?"*, *"Which emotion or setup is quietly draining my account?"*, *"Will my bank balance cover upcoming installments over the next 30 days?"*, and *"How fast can I clear all debt?"*
-- **Target Audience / Persona**: Active FX/gold/crypto traders managing both MT5 trading accounts and personal cashflow, loans, people ledgers, and priority-weighted life goals in bilingual Persian (RTL) and English (LTR).
-- **Key Value**: Prevents destructive FOMO/revenge overtrading, eliminates cashflow surprises before loan/bill due dates, accelerates Debt-First freedom with concrete simulation math, and unifies search across every entity via `Ctrl+K`.
+> **تصمیمات قطعی تاییدشده شما در مرحله مصاحبه:**
+> 1. **فرم‌ها و جزئیات در موبایل:** تبدیل تمامی مودال‌های وسط صفحه و پنل بازبینی معامله به **کشوی پایین صفحه استاندارد M3 (Modal Bottom Sheet)** با دستگیره کششی و دکمه اقدام چسبان در ناحیه دسترس شست.
+> 2. **صفحه دستیار هوشمند در موبایل:** چیدمان **چت تمام‌صفحه شبیه Gemini Mobile** به همراه دکمه بالای صفحه برای باز کردن **کشوی تاریخچه گفتگو و حافظه بلندمدت**.
+> 3. **کاهش اسکرول طولانی در آنالیز ترید و مالی:** ترکیب **کاروسل اسلایدی افقی نمودارها** (اسکرول چسبنده به همراه نقاط صفحه) + **کارت‌های بازشونده آکاردئونی** برای شاخص‌ها و نمودارهای تکمیلی.
+> 4. **قابلیت‌های تعاملی جدید M3:** افزودن **کاروسل افقی کارت حساب‌ها و دکمه‌های اقدام سریع** در مالی، **حلقه پیشرفت دایره‌ای M3 و نوار فشرده استریک/XP** در اهداف، و **دکمه‌های سریع ثبت احساس و تگ ستاپ معامله** روی کارت‌های ژورنال موبایل.
 
 ---
 
-## 2. User Experience & Visual Design
+## ۱. بررسی وضعیت فعلی و الگوهای الهام‌بخش
 
-- **Key User Flows**:
-  1. **Pre-Trade Safety Flow**: Inside Trading -> Risk & Calculator or Quick Action, user picks an MT5 account, entry price, stop loss, take profit, and risk percentage -> sees calculated lot size, dollar risk, R:R ratio, and whether today's cumulative drawdown already triggered the daily circuit breaker.
-  2. **Diagnostic Drill-Down Flow**: User inspects the Emotion × Setup Matrix or the `24h × 7d` Win-Rate Density Heatmap in Trading Analytics -> clicks a red/high-variance segment (e.g., *Revenge* or *London 14:00*) -> automatically switches to the Trade Journal filtered to those exact trades with a clearable filter chip bar.
-  3. **Broker Import Flow**: User drops a standard broker CSV / MT5 history export -> sees a live mapped preview table (ticket, symbol, side, volume, profit, timestamps) -> confirms import with duplicate-ticket protection.
-  4. **30-Day Cashflow & What-If Flow**: Inside Finance Planning, user views a day-by-day projected balance line across the next 30 days flagging upcoming installment/bill collisions -> drags the *Extra Monthly Debt Allocation* slider to watch projected debt-free date and Goal unlock timeline update in real time.
-  5. **Global Command Palette (`Ctrl+K` / `Cmd+K`)**: Pressing `Ctrl+K` (or clicking the subtle header/sidebar search affordance) opens a frosted glass modal to jump directly to any trade, person ledger, loan, goal, or quick action.
-  6. **Periodic Digest & Print Report**: Inside Overview or Actions, user switches between *Weekly* and *Monthly* Executive Digest cards summarizing net trading PnL, SL discipline, debt reduced, savings rate, and top/worst habits, with a clean *Print / Save PDF* mode.
-- **Visual Identity & Theme**:
-  - *Aesthetic Direction*: Continues FundTrack's Layered Translucent Material-Glass cockpit across all 10 light and dark themes (`Obsidian`, `Aurora`, `Midnight`, `Emerald`, `Crimson`, `Cyberpunk`, `Royal`, `Light`, `Coral`, `Lavender`).
-  - *Color Palette & Mood*: Preserves the 60-30-10 discipline — neutral theme canvas (`--ft-canvas`), frosted structural cards (`.glass-surface` / `.glass-tile` / `.glass-dropdown`), and high-intent theme gradient accents (`--ft-accent-grad`), pairing semantic status colors (`--ft-positive`, `--ft-warning`, `--ft-danger`) strictly with explicit labels/icons (never hue-only).
-  - *Typography & Hierarchy*: `Vazirmatn` + `Plus Jakarta Sans` for crisp bilingual display/body prose; `JetBrains Mono` (`tabular-nums`) for all prices, lot sizes, PnL, dates, and ratios to guarantee zero vertical jitter.
-  - *Component Styling & Layout*: Single-elevation glass cards (`rounded-3xl`), hairline dividers (`--ft-border`), interactive segmented filter buttons (no static decorative pills, no pulsing dots, no thick left accent bars).
-- **Interactive Feedback & Motion**: Smooth `cubic-bezier(0.16, 1, 0.3, 1)` transitions under 200ms (`transform` / `opacity` only), respecting `prefers-reduced-motion`; empty, populated, and validation error states on every new calculator, importer, and timeline chart.
+### مشکلات شناسایی‌شده در نسخه موبایل فعلی
+* **بخش مالی:** باکس‌های متعدد و سنگین با حاشیه و پدینگ زیاد به‌صورت عمودی روی هم چیده شده‌اند؛ مشاهده مانده حساب‌های مختلف نیاز به رفتن به زیرتب جداگانه و اسکرول زیاد دارد؛ ۱۰ مودال مختلف (ثبت تراکنش، حساب بانکی، خط اعتبار، بدهی اشخاص، وام، بودجه و نرخ ارز) در مرکز صفحه باز می‌شوند که در گوشی‌های امروزی خارج از ناحیه راحت شست قرار دارند.
+* **بخش اهداف:** هدر بزرگ امتیازات، لول، ۴ کارت آمار و نوار «کمبوی سه‌گانه طلایی» حدود ۴۰۰ تا ۴۵۰ پیکسل ابتدای صفحه موبایل را اشغال می‌کند و باعث می‌شود کاربر پیش از اسکرول حتی اولین هدف خود را نبیند؛ کارت‌های هدف فاقد حلقه پیشرفت دایره‌ای سریع‌خوان هستند.
+* **بخش دستیار هوشمند:** در موبایل، ستون کناری تاریخچه و حافظه به زیر کادر چت رانده شده و باعث اسکرول اضافه، کاهش فضای مفید چت و دشواری در تعویض سریع گفتگو یا مدیریت حافظه شده است.
+* **بخش ترید:**
+  * در زیرتب **آنالیز**، حدود ۱۰ بخش سنگین نموداری (منحنی سرمایه، گیج‌ها، نقشه حرارتی ساعت×روز، مدت نگهداری، بازده ساعتی، سشن‌ها، توزیع ضریب R، برترین و پرضررترین معاملات و رادار تکنیکال) زیر هم قرار گرفته‌اند که اسکرول بسیار طولانی ایجاد می‌کند.
+  * در **ژورنال**، ثبت احساس (Emotion Tag) یا تغییر سریع تگ ستاپ روی موبایل نیازمند باز کردن کشوی کناری از لبه صفحه است و تعامل تک‌لمسی وجود ندارد.
 
----
-
-## 3. Key Product Decisions & Trade-Offs
-
-- **Decision 1 — Client-Side Risk & Cashflow Engine vs. Backend Microservice**
-  - *Chosen Approach*: Pure deterministic calculation helpers for position sizing, daily drawdown checks, 30-day cashflow projection, and debt payoff simulation.
-  - *Why*: Instant zero-latency slider and calculator feedback without network roundtrips or persistence drift.
-  - *Alternatives Considered*: Server-side simulation endpoints — rejected because all state already lives locally and instant scrubbing at 60fps improves UX.
-- **Decision 2 — Cross-View Click-to-Filter State vs. Isolated Sub-Tab Filters**
-  - *Chosen Approach*: Lift an optional structured Trade Journal filter payload (`emotion`, `setup`, `weekday`, `hour`, `durationBucket`) to the Trading workspace level so clicking any analytics visualization opens and filters the journal immediately.
-  - *Why*: Turns passive charts into investigative tools, fulfilling the "data-to-action" loop.
-  - *Alternatives Considered*: Showing mini-popups inside charts — rejected due to mobile crowding and inability to open full trade review drawers from popups.
-- **Decision 3 — Unified `Ctrl+K` Modal vs. Persistent Header Search Input**
-  - *Chosen Approach*: Keyboard-triggered `Ctrl+K` / `Cmd+K` frosted glass Command Palette modal plus a compact icon trigger, keeping the 3-zone top header contract clean and uncluttered.
-  - *Why*: Preserves strict top-bar visual restraint while indexing trades, people, debts, goals, and commands in one place.
-  - *Alternatives Considered*: Expanding the header with a wide input box — rejected because it breaks header zone proportions on 1024px–1280px viewports.
+### یافته‌های کلیدی از استاندارد M3 و اپ‌های مرجع
+1. **Revolut & Monarch Money (مالی):** کارت‌های افقی با اسکرول مغناطیسی (Snap Carousel) برای حساب‌ها و اعتبارها در بالای صفحه به همراه یک ردیف **دکمه‌های دایره‌ای/کپسولی اقدام سریع (Quick Action Grid)** دقیقاً زیر کارت ارزش خالص، دسترسی به پرکاربردترین عملیات (`ثبت`، `انتقال`، `تسویه قسط`، `ارز`) را به یک لمس کاهش می‌دهد.
+2. **TradingView & TradesViz (ترید):** نمایش ۳ نمودار اصلی ترید در یک **کاروسل اسلایدی با نقاط نشانگر** در بالای آنالیز، همراه با **تگ‌های تک‌لمسی روان‌شناسی معامله (آرام، مطمئن، FOMO، انتقامی، عجله)** روی کارت هر معامله، سرعت ثبت ژورنال را ۳ تا ۴ برابر می‌کند.
+3. **Google Gemini Mobile (دستیار هوشمند):** اختصاص بیش از ۸۵٪ ارتفاع صفحه به رشته گفتگو و باکس ورودی ارگونومیک در پایین صفحه، انتقال تاریخچه و حافظه به **کشوی پایین/کناری با یک دکمه در هدر فشرده بالا**، و حفظ محدودیت **حداکثر ۱۵٪ سطح چسبان** در کل نمای موبایل.
 
 ---
 
-## 4. Technical Architecture & Data Strategy *(Technical Reference)*
+## ۲. طراحی تجربه کاربری و رابط بصری Material Design 3
 
-- **Architecture & Component Diagram**:
+### الف) زیرساخت مشترک: کشوی پایین صفحه استاندارد M3 (Responsive Modal Bottom Sheet)
+* در دسکتاپ (`md` و بزرگ‌تر) همان پنجره متمرکز یا کشوی کناری کلاسیک حفظ می‌شود، اما در موبایل و تبلت کوچک (`< md`) تمامی فرم‌ها، جزئیات و لیست‌های انتخاب به‌صورت **M3 Modal Bottom Sheet** عمل می‌کنند:
+  * **هندسه ظاهری:** گوشه‌های بالای گرد (`28px`)، دستگیره کششی مرکزی در بالا (`Drag Handle`)، پس‌زمینه محو پشتی با لمس قابل بستن، ارتفاع حداکثری `88dvh` با اسکرول روان بدنه داخلی و دکمه تایید نهایی چسبان در فوتر.
+  * **کاربردهای یکپارچه:** هاب ثبت سریع سراسری، کشوی بازبینی معامله، فرم‌های ثبت تراکنش/انتقال/تسویه/حساب/شخص/وام، ویزارد ساخت هدف و تخصیص بودجه، و کشوی تاریخچه و حافظه دستیار هوشمند.
+  * **انضباط سیستم طراحی:** هماهنگی کامل با ۱۰ تم رنگی موجود (`--ft-*`)، رعایت هدف لمسی حداقل `44×44` پیکسل، پرهیز از کارت‌های تودرتوی متعدد (Single Elevation) و استفاده از جداکننده‌های نقطه‌ای (`·`) به‌جای برچسب‌های تزیینی ایستا.
 
-```text
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                         FundTrack Persistent State                           │
-│   Trades · MT5 Accounts · Bank Accounts · Loans · Fixed Expenses · Goals     │
-│   Settings (dailyMaxLossPct, defaultRiskPct, usdToman, Theme, Language)      │
-└───────────────────────────────┬──────────────────────────────────────────────┘
-                                │
-        ┌───────────────────────┼───────────────────────┐
-        ▼                       ▼                       ▼
-┌───────────────────┐   ┌───────────────────┐   ┌───────────────────┐
-│ Risk & Psychology │   │ Cashflow & Debt   │   │ Global Palette &  │
-│  Compute Engine   │   │ Simulation Engine │   │  Digest Engine    │
-│                   │   │                   │   │                   │
-│ - Emotion × Setup │   │ - 30d Daily Balance   │ - Fuzzy Search    │
-│ - Lot Size & R:R  │   │   Runway & Alerts │   │   Across Entities │
-│ - Daily DD Check  │   │ - Extra Payment   │   │ - Weekly/Monthly  │
-│ - CSV/MT5 Parser  │   │   Months-Saved    │   │   Scorecard       │
-└─────────┬─────────┘   └─────────┬─────────┘   └─────────┬─────────┘
-          │                       │                       │
-          ▼                       ▼                       ▼
-┌───────────────────┐   ┌───────────────────┐   ┌───────────────────┐
-│   Trading View    │   │   Finance View    │   │ Overview & Global │
-│                   │   │                   │   │      Shell        │
-│ - Psych Matrix    │   │ - 30d Runway SVG  │   │ - Ctrl+K Palette  │
-│ - Risk Calculator │   │ - What-If Slider  │   │ - Digest View +   │
-│ - Click-to-Filter │   │ - Collision Flags │   │   Print Mode      │
-│ - CSV Import Drop │   │                   │   │ - DD Alert Sync   │
-└───────────────────┘   └───────────────────┘   └───────────────────┘
+### ب) بازطراحی موبایل صفحه مالی
+* **کارت ارزش خالص فشرده و خوانا:** نمایش خالص ثروت و مبلغ «قابل خرج آزاد» با ارقام تراز شده (`tabular-nums`) و دکمه سریع مخفی‌سازی حریم خصوصی در کارت اول.
+* **کاروسل افقی کارت حساب‌ها و خطوط اعتبار (جدید):** نمایش حساب‌های بانکی و خطوط اعتباری (مثل دیجی‌پی) به‌صورت کارت‌های اسلایدی افقی چسبنده (`Snap-X Carousel`) با نشانگرهای نقطه‌ای در زیر آن، تا کاربر بدون ترک صفحه خلاصه، مانده تک‌تک حساب‌ها و وضعیت قسط‌ها را با کشیدن انگشت ببیند و با لمس هر کارت به ثبت/ویرایش آن برود.
+* **ردیف دکمه‌های اقدام سریع M3 (جدید):** ۴ دکمه آیکنیِ خوش‌دست با برچسب کوتاه زیر کارت خلاصه برای `ثبت تراکنش`، `انتقال بین‌حسابی`، `تسویه قسط/شخص` و `نرخ ارز` که مستقیماً Bottom Sheet مربوطه را باز می‌کنند.
+* **خلاصه‌سازی شاخص‌های مالی در موبایل:** نمودارهای تراز دارایی، نسبت بدهی و جریان ماهانه به‌جای اشغال چند کارت پشت‌سرهم، در یک **کاروسل ۲ اسلایدی یا آکاردئون بازشونده** ارائه می‌شوند تا طول اسکرول موبایل به کمتر از نصف کاهش یابد.
+* **کارت‌بندی ریسپانسیو لیست تراکنش‌ها، اشخاص و بدهی‌ها:** تبدیل ردیف‌های جدول‌های عریض به لیست‌های لمسی استاندارد M3 (ارتفاع `56–68px`، آیکون دایره‌ای سمت راست، عنوان و متادیتای نقطه‌ای در وسط، مبلغ تراز شده و اقدام سریع در سمت چپ).
+
+### پ) بازطراحی موبایل صفحه اهداف و رشد
+* **نوار فشرده و بازشونده استریک / XP (جدید):**
+  * در حالت موبایل (`< md`) به‌جای باکس بزرگ ۴ تایی، یک **نوار فشرده تک‌خطی آکاردئونی** در بالاترین نقطه صفحه نمایش داده می‌شود: نشانگر `سطح فعلی · استریک 🔥 · ستاره‌ها ★ · کمبوی X/3`.
+  * با یک لمس، پنل کامل ۴ تایی و وضعیت ۳ پایه «کمبوی سه‌گانه طلایی» باز می‌شود و در غیر این صورت اهداف واقعی بلافاصله در نمای اول صفحه دیده می‌شوند.
+* **حلقه پیشرفت دایره‌ای M3 روی کارت‌های هدف (جدید):**
+  * افزودن یک **حلقه پیشرفت SVG استاندارد M3 (`Circular Progress Indicator`)** با درصد مرکزی `tabular-nums` و رنگ معنایی (بر اساس اولویت، سررسید باز تا تامین بودجه یا تاریخ‌دار و منبع تامین) در کنار عنوان هر هدف، همراه با دکمه‌های سریع `تخصیص بودجه` و `تغییر وضعیت`.
+* **مدیریت اهداف و تاریخچه پاس‌شده‌ها در Bottom Sheet:** باز شدن ویزارد گام‌به‌گام تعریف هدف جدید (با پشتیبانی کامل از هر دو حالت سررسید تاریخ‌دار و باز تا تامین بودجه و انتخاب منبع تامین) و فرم تخصیص پول به هدف در کشوی پایین صفحه.
+
+### ت) بازطراحی موبایل صفحه دستیار هوشمند (الگوی Gemini Mobile)
+* **چیدمان تمام‌صفحه موبایل:** در نمایشگرهای کوچک‌تر از دسکتاپ، ستون کناری از زیر صفحه حذف شده و فضای چت دقیقاً ارتفاع مفید بین هدر موبایل و نوار ناوبری پایین (`Mobile Bottom Nav`) را با حداکثر فضا برای پیام‌ها پر می‌کند.
+* **نوار بالای فشرده شبیه Gemini (`52px`):**
+  * شامل نام گفتگوی جاری + دکمه‌های آیکنی با اندازه لمسی کامل برای: **کشوی تاریخچه و حافظه**، **گفتگوی جدید** و **تنظیمات مدل**.
+* **کشوی کشویی تاریخچه گفتگو و حافظه دائمی (M3 Bottom Sheet):** با زدن دکمه تاریخچه، کشوی پایین صفحه بالا می‌آید و با یک سوئیچ دوحالته (M3 Segmented Button) بین لیست «تاریخچه گفتگوها» (با قابلیت انتخاب، ساخت و حذف) و «حافظه دائمی دستیار» (با دسته‌بندی قانون/ترجیح/زمینه و حذف تک‌موردی) جابه‌جا می‌شود.
+* **بهینه‌سازی باکس ورودی و چیپ‌های پیشنهادی:** اسکرول افقی یک‌خطی برای چیپ‌های دستور سریع بالای کادر متن + باکس ورودی منعطف که با تایپ چندخطی به‌نرمی باز می‌شود و دکمه ارسال/حالت تحلیل در کنار آن قرار می‌گیرد.
+
+### ث) بازطراحی موبایل صفحه ترید (ژورنال و آنالیز)
+* **تب آنالیز ترید — ترکیب کاروسل نمودارها + آکاردئون:**
+  1. **نوار خلاصه KPI دو-ستونه:** حداکثر ۶ متریک حیاتی در شبکه‌ای جمع‌وجور.
+  2. **کاروسل اسلایدی نمودارهای کلیدی (اسلایدهای افقی با نقاط صفحه در موبایل):**
+     * اسلاید ۱: **منحنی رشد سرمایه (Equity / Period P&L)** به همراه کلید تعویض سریع حالت.
+     * اسلاید ۲: **گیج‌های عملکرد (Win Rate، Profit Factor، نسبت Long/Short)**.
+     * اسلاید ۳: **عملکرد سشن‌ها / روزهای هفته و توزیع R-Multiple**.
+     * *(در دسکتاپ این ۳ بخش همچنان در گرید چندستونه کنار هم نمایش داده می‌شوند تا بهره‌وری دسکتاپ دست‌نخورده بماند).*
+  3. **کارت‌های بازشونده آکاردئونی برای تحلیل‌های عمقی:** بخش‌های «نقشه چگالی ساعت × روز هفته»، «مدت نگهداری و بازده ساعتی»، «برترین/پرضررترین معاملات» و «رادار تکنیکال بازار» در موبایل به‌صورت کارت‌های بسته با یک خط خلاصه کلیدی (مثل `بهترین روز: سه‌شنبه · +$420`) نمایش داده می‌شوند و با لمس، نمودار کامل هر کدام باز می‌شود.
+* **تب ژورنال — ثبت سریع احساس و تگ ستاپ روی کارت موبایل (جدید):**
+  * روی هر کارت معامله در نمای موبایل، علاوه بر اطلاعات نماد، حجم، سشن، P&L و R-Multiple، یک ردیف ابزار سریع در پایین کارت اضافه می‌شود:
+    * **تگ سریع احساس معامله (Emotion Pills):** دکمه‌های تک‌لمسی فشرده (`آرام`، `مطمئن`، `عجله`، `FOMO`، `انتقامی`) که با یک لمس مستقیم روی همان کارت ذخیره می‌شوند و نیازی به باز کردن فرم کامل ندارند.
+    * **انتخابگر سریع ستاپ و چک‌باکس رعایت حد ضرر (SL Respected)** + دکمه «بازبینی کامل» برای باز کردن Bottom Sheet یادداشت و جزئیات معامله.
+
+---
+
+## ۳. تصمیمات کلیدی محصول و توازن فنی (Trade-Offs)
+
+| تصمیم معماری | گزینه‌های بررسی‌شده | انتخاب نهایی و دلیل |
+| :--- | :--- | :--- |
+| **مکانیزم مودال و کشوی موبایل** | ساخت کامپوننت‌های کاملاً مجزا برای موبایل در برابر یک کامپوننت واکنش‌گرا | طراحی **یک ظرف پایه واکنش‌گرا (`ResponsiveModalSheet`)**: در `< md` به‌صورت کشوی پایین M3 با `rounded-t-3xl` و هندل کششی رندر می‌شود و در `>= md` به‌شکل مودال استاندارد وسط صفحه یا کشوی کناری؛ این روش کد تکراری را به صفر می‌رساند و یکپارچگی ۱۰ تم را تضمین می‌کند. |
+| **پیاده‌سازی کاروسل نمودار و حساب‌ها** | نصب کتابخانه سنگین اسلایدر خارجی در برابر CSS Scroll Snap بومی | استفاده از **CSS `snap-x snap-mandatory` بومی + `IntersectionObserver` / `scrollLeft` سبک**؛ بدون افزایش حجم باندل، دارای فیزیک اسکرول بومی موبایل (iOS و Android)، پشتیبانی بی‌نقص از RTL فارسی و LTR انگلیسی، و نرخ نوسازی ۶۰ فریم بر ثانیه. |
+| **حفظ تجربه دسکتاپ (`>= lg`)** | تغییر چیدمان کل پروژه برای موبایل در برابر تطبیق هوشمند در نقاط شکست | حفظ کامل شبکه‌های چندستونه دسکتاپ (`lg:grid-cols-12`) و نمایش پیش‌فرض بازِ آکاردئون‌ها در دسکتاپ، در حالی که زیر `md`/`lg` حالت کاروسل، آکاردئون بسته، نوار فشرده XP و چت تمام‌صفحه فعال می‌شوند. |
+| **ذخیره‌سازی تگ احساس در ژورنال** | صرفاً داخل `TradeReviewDrawer` در برابر ویرایش مستقیم از `TradingView` | اتصال مستقیم فراخوانی `onSaveTradeReview` به کارت‌های ژورنال تا لمس تگ احساس یا ستاپ، بلافاصله وضعیت ترید را در حافظه و تاریخچه ذخیره و پیام بازخورد کوتاه ثبت کند. |
+
+---
+
+## ۴. معماری فنی و جریان داده‌ها
+
+### دیاگرام ساختار واکنش‌گرای موبایل در سیستم M3
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                   پوشش ریسپانسیو موبایل (480px به بالا)                │
+│  هدر موبایل (<=56px) + محتوای قابل اسکرول (85%+) + Bottom Nav (M3)  │
+└───────────────┬──────────────────┬──────────────────┬────────────────┘
+                │                  │                  │
+     ┌──────────▼─────────┐ ┌──────▼──────────┐ ┌─────▼──────────────┐
+     │     مالی (M3)      │ │  اهداف و رشد    │ │  دستیار هوشمند     │
+     │ • کاروسل حساب‌ها   │ │ • نوار XP فشرده  │ │ • هدر Gemini-style │
+     │ • دکمه‌های اقدام   │ │ • حلقه پیشرفت   │ │ • رشته چت تمام‌قد   │
+     │   سریع دایره‌ای    │ │   دایره‌ای SVG   │ │ • کشوی Bottom Sheet│
+     │ • خلاصه آکاردئونی  │ │ • تاریخچه پاس   │ │   تاریخچه و حافظه  │
+     └──────────┬─────────┘ └──────┬──────────┘ └─────┬──────────────┘
+                │                  │                  │
+                └──────────────────┼──────────────────┘
+                                   │
+                    ┌──────────────▼──────────────┐
+                    │         ترید (M3)           │
+                    │ • آنالیز: کاروسل نمودارها   │
+                    │   + آکاردئون‌های تحلیلی     │
+                    │ • ژورنال: دکمه‌های یک‌لمسی  │
+                    │   احساس و ستاپ روی کارت     │
+                    └──────────────┬──────────────┘
+                                   │
+         ┌─────────────────────────▼──────────────────────────┐
+         │    ظرف یکپارچه کشوی پایین M3 (Modal Bottom Sheet)   │
+         │  • Quick Action Hub   • TradeReviewDrawer          │
+         │  • Goal Wizard/Alloc  • Finance CRUD Forms         │
+         │  • Assistant History & Persistent Memory Sheet     │
+         └────────────────────────────────────────────────────┘
 ```
 
-- **Data Model & State**:
-  - Extend `SystemSettings` with `dailyMaxLossPct` (default `3%`), `defaultRiskPct` (default `1%`), and optional `monthlyExpectedIncomeIrt` for 30-day runway baselines.
-  - Add derived view models (not persisted raw) for `EmotionSetupStats`, `PositionSizingResult`, `CashflowDayPoint`, `DebtWhatIfComparison`, and `PeriodDigestReport`.
-  - Daily drawdown alerts automatically emit/update persistent `NotificationItem` records when realized today's loss exceeds `dailyMaxLossPct` of active MT5 equity.
-- **Interactive Component & State Mapping**:
-  - **Command Palette Modal**: Bound globally to `keydown` (`Ctrl+K` / `Cmd+K` and `Escape`), filtering across trades, bank accounts, people, loans, goals, and quick navigation/action commands; selecting a row navigates to the target category/sub-tab or triggers the action and closes cleanly.
-  - **Trading Risk & Psychology Controls**:
-    - Clicking any bar/cell in `Emotion × Setup` Matrix, `TradeWinRateDensityHeatmap`, or `DurationBucketsChart` dispatches a structured filter object to `TradingView` and switches to the `journal` sub-tab with a dismissible filter indicator.
-    - Lot-size calculator binds account selector, symbol preset (`XAUUSD`, `EURUSD`, `GBPUSD`, `USDJPY`, `BTCUSD`, `Custom`), balance override, risk %, entry, SL, and TP to live validation (`entry !== sl`) and outputs exact lots, risked USD/IRT, projected profit, and R:R gauge.
-    - CSV importer reads uploaded `.csv` / `.txt` files, maps detected headers (`ticket`, `symbol`, `type/direction`, `volume/lots`, `open`, `close`, `profit`, `commission`, `swap`), previews valid vs duplicate rows, and merges only new trades into state.
-  - **Finance Runway & What-If Controls**:
-    - 30-day runway engine projects daily running liquid balance from today across the next 30 calendar days, subtracting scheduled `FixedExpense` items on matching Jalali days and open `LoanItem` installments on matching due dates, marking collision days (`balance < 0`) cleanly on an interactive SVG timeline with hover tooltips.
-    - Debt What-If slider dynamically re-runs the Debt-First Avalanche/Snowball payoff simulation with the user's extra monthly IRT allocation and displays current vs accelerated payoff date, months saved, and Goal unlock date.
-  - **Executive Digest & Print View**:
-    - Segmented toggle (`Weekly` / `Monthly`) calculates period deltas from `trades`, `transactions`, `loans`, and `goals`; clicking *Print Report* triggers a dedicated print stylesheet hiding sidebar/chrome so the glass scorecard exports cleanly to PDF/paper.
+### جریان تعامل اجزای جدید و وضعیت‌ها (State & Handlers)
+1. **لایه M3 Reusable Primitives (کامپوننت‌های پایه مشترک):**
+   * **`BottomSheetModal` / ظرف کشوی واکنش‌گرا:** پذیرش `open`, `onClose`, `title`, `subtitle`, `footer`, `desktopVariant` (`center` | `side-drawer`)؛ مدیریت قفل اسکرول بدنه، کلید `Escape`، بستن با لمس پس‌زمینه و جابه‌جایی خودکار کلاس‌ها بین موبایل (`items-end`, `rounded-t-3xl`, کشش از پایین) و دسکتاپ.
+   * **`M3SnapCarousel`:** مدیریت آرایه اسلایدها با پشتیبانی خودکار از `dir="rtl"` / `dir="ltr"`، محاسبه اسلاید فعال با اسکرول، نمایش نقاط نشانگر لمسی و دکمه‌های ناوبری اختیاری برای تبلت.
+   * **`M3AccordionCard`:** وضعیت `defaultExpandedDesktop` در برابر `defaultExpandedMobile` همراه با هدر تک‌لمسی دارای عنوان، خلاصه عددی یک‌خطی (`tabular-nums`) و انیمیشن باز/بسته‌شدن روان با GPU.
+   * **`M3CircularProgress`:** حلقه پیشرفت SVG قابل‌تنظیم (`size`, `strokeWidth`, `valuePct`, `tone`, `centerContent`) منطبق با متغیرهای رنگ تم (`--ft-accent`, `--ft-positive`, `--ft-warning`, `--ft-danger`).
+
+2. **به‌روزرسانی جریان داده در بخش‌های چهارگانه:**
+   * **مالی:** افزودن کاروسل حساب‌های بانکی + خطوط اعتبار روی داده واقعی `bankAccounts` و `creditLines` در تب خلاصه؛ اتصال دکمه‌های اقدام سریع M3 به بازشدن مودال تراکنش با پیش‌انتخاب نوع (`expense` / `transfer` / `settlement`) و بازشدن سریع فرم نرخ ارز؛ ارتقای ۱۰ مودال صفحه به استفاده از ظرف کشوی پایین M3.
+   * **اهداف:** کنترل باز/بسته‌شدن نوار XP/کمبو در موبایل با استیت محلی فشرده؛ جایگزینی نوار خطی تنها روی کارت‌های هدف با `M3CircularProgress` در کنار جزئیات منبع تامین و سررسید؛ تبدیل ۴ مودال صفحه رشد (ساخت هدف، تخصیص بودجه، صندوق هفتگی، مأموریت سفارشی) به کشوی پایین M3.
+   * **دستیار:** استخراج پنل `تاریخچه گفتگو و حافظه` به یک بخش مشترک قابل رندر هم در سایدبار دسکتاپ (`lg:block`) و هم در کشوی پایین M3 موبایل (`< lg`)؛ اختصاص کل فضای باقیمانده صفحه موبایل به محیط گفتگو در راستای الگوی Gemini.
+   * **ترید:** انتقال فراخوانی `handleSaveTradeReview` به نمای ژورنال جهت ذخیره فوری `emotionTag`، `setupTag` و `slRespected` از روی کارت‌های موبایل بدون نیاز به باز کردن کشو؛ گروه‌بندی نمودارهای تب آنالیز درون کاروسل اسلایدی و آکاردئون‌های موبایل؛ ارتقای کشوی `TradeReviewDrawer` به Bottom Sheet کامل با پشتیبانی مستقیم از انتخابگر احساس و رعایت SL.

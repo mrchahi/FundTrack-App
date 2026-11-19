@@ -8,12 +8,15 @@ import {
   CreditCard,
   Target,
   Trash2,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import {
   AppLanguage,
   FundTrackState,
   MainCategory,
   NotificationItem,
+  SystemSettings,
 } from '../types';
 import { t } from '../i18n/translations';
 import { buildUnifiedNotificationFeed, UnifiedFeedEntry } from '../utils/notifications';
@@ -26,6 +29,7 @@ interface HeaderNotificationDropdownProps {
   onMarkAllRead: (ids: string[]) => void;
   onClearRead: (readIds: string[]) => void;
   onNotificationAction: (notif: NotificationItem) => void;
+  onUpdateSettings?: (patch: Partial<SystemSettings>) => void;
   compactCircle?: boolean;
 }
 
@@ -39,6 +43,7 @@ export const HeaderNotificationDropdown: React.FC<HeaderNotificationDropdownProp
   onMarkAllRead,
   onClearRead,
   onNotificationAction,
+  onUpdateSettings,
   compactCircle = false,
 }) => {
   const lang: AppLanguage = state.settings.language;
@@ -174,8 +179,8 @@ export const HeaderNotificationDropdown: React.FC<HeaderNotificationDropdownProp
                 <p className="text-[11px] font-num text-[var(--ft-text-muted)] mt-0.5">
                   {t(
                     lang,
-                    `${counts.unreadCount} خوانده‌نشده · ${counts.debts} بدهی/قسط · ${counts.news} خبر`,
-                    `${counts.unreadCount} unread · ${counts.debts} debts · ${counts.news} news`
+                    `${counts.unreadCount} خوانده‌نشده · ${counts.debts} قسط · ${counts.news} خبر امروز`,
+                    `${counts.unreadCount} unread · ${counts.debts} debts · ${counts.news} today news`
                   )}
                 </p>
               </div>
@@ -210,8 +215,8 @@ export const HeaderNotificationDropdown: React.FC<HeaderNotificationDropdownProp
                 [
                   ['all', t(lang, 'همه', 'All'), counts.all],
                   ['system', t(lang, 'سیستم', 'System'), counts.system],
-                  ['debts', t(lang, 'بدهی/قسط', 'Debts'), counts.debts],
-                  ['news', t(lang, 'اخبار', 'News'), counts.news],
+                  ['debts', t(lang, 'اقساط', 'Debts'), counts.debts],
+                  ['news', t(lang, 'اخبار روز', 'Today News'), counts.news],
                 ] as Array<[DropdownCategory, string, number]>
               ).map(([id, label, count]) => (
                 <button
@@ -229,6 +234,48 @@ export const HeaderNotificationDropdown: React.FC<HeaderNotificationDropdownProp
                 </button>
               ))}
             </div>
+
+            {onUpdateSettings && (
+              <div className="flex items-center justify-between gap-2 text-[11px] px-1">
+                <div className="flex items-center gap-1.5 text-[var(--ft-text-muted)]">
+                  <span>{t(lang, 'یادآور خبر امروز:', 'News alert:')}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const opts = [15, 30, 60, 5, 10];
+                      const curr = state.settings.newsAlertLeadMinutes ?? 15;
+                      const next = opts[(opts.indexOf(curr) + 1) % opts.length] ?? 15;
+                      onUpdateSettings({ newsAlertLeadMinutes: next });
+                    }}
+                    className="px-2 py-0.5 rounded-full bg-[var(--ft-accent-soft)] text-[var(--ft-accent)] font-num font-semibold cursor-pointer hover:opacity-90"
+                    title={t(lang, 'تغییر زمان یادآوری قبل از خبر', 'Cycle alert lead time')}
+                  >
+                    {state.settings.newsAlertLeadMinutes ?? 15} {t(lang, 'دقیقه قبل', 'min before')}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onUpdateSettings({
+                      newsAlertSoundEnabled: state.settings.newsAlertSoundEnabled === false,
+                    })
+                  }
+                  className={`px-2 py-0.5 rounded-full border flex items-center gap-1 cursor-pointer transition-colors ${
+                    state.settings.newsAlertSoundEnabled !== false
+                      ? 'border-[var(--ft-accent)] text-[var(--ft-accent)]'
+                      : 'border-[var(--ft-border)] text-[var(--ft-text-muted)]'
+                  }`}
+                  title={t(lang, 'قطع/وصل صدای هشدار خبر', 'Toggle news alarm sound')}
+                >
+                  {state.settings.newsAlertSoundEnabled !== false ? (
+                    <Volume2 className="w-3 h-3" />
+                  ) : (
+                    <VolumeX className="w-3 h-3" />
+                  )}
+                  <span>{state.settings.newsAlertSoundEnabled !== false ? t(lang, 'صدا', 'Sound') : t(lang, 'بی‌صدا', 'Mute')}</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Notification List */}

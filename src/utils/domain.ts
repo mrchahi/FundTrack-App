@@ -1359,6 +1359,7 @@ export interface GoalPlanPreview {
   monthsNeeded: number;
   projectedDate: string;
   isFeasible: boolean;
+  isOpenEnded: boolean;
   warnings: string[];
   dailyTargetInGoalCurrency: number;
   weeklyTargetInGoalCurrency: number;
@@ -1368,11 +1369,18 @@ export interface GoalPlanPreview {
 export function computeGoalPlan(
   goal: Pick<
     Goal,
-    'targetAmount' | 'savedAmount' | 'targetDate' | 'weeklyBudgetAmount' | 'allocationPct' | 'currency'
+    | 'targetAmount'
+    | 'savedAmount'
+    | 'targetDate'
+    | 'deadlineMode'
+    | 'weeklyBudgetAmount'
+    | 'allocationPct'
+    | 'currency'
   >,
   recentProfitFactor = 1.5,
   recentAvgR = 1
 ): GoalPlanPreview {
+  const isOpenEnded = goal.deadlineMode === 'open_until_funded';
   const remainingAmount = Math.max(0, goal.targetAmount - goal.savedAmount);
   const progressPct =
     goal.targetAmount > 0 ? Math.min(100, Number(((goal.savedAmount / goal.targetAmount) * 100).toFixed(1))) : 0;
@@ -1382,12 +1390,16 @@ export function computeGoalPlan(
 
   const now = new Date();
   const targetDt = new Date(goal.targetDate);
-  const daysToTarget = Math.max(1, Math.ceil((targetDt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+  const daysToTarget = isOpenEnded
+    ? Math.max(30, monthsNeeded * 30)
+    : Math.max(1, Math.ceil((targetDt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
   const nowJ = toJalali(now);
   const currentJalaliDays = getJalaliMonthLength(nowJ.jy, nowJ.jm);
   const monthsAvailable = Math.max(1, daysToTarget / currentJalaliDays);
 
-  const suggestedMonthly = Math.ceil(remainingAmount / monthsAvailable);
+  const suggestedMonthly = isOpenEnded
+    ? Math.ceil(monthlyContribution)
+    : Math.ceil(remainingAmount / monthsAvailable);
   const projected = addJalaliMonths(now, monthsNeeded);
 
   // Performance-linked ETA shift based on real Profit Factor & R-Multiple
@@ -1401,9 +1413,13 @@ export function computeGoalPlan(
   projected.setDate(projected.getDate() + etaShiftDays);
 
   const warnings: string[] = [];
-  const isFeasible = monthsNeeded <= Math.ceil(monthsAvailable) && monthlyContribution > 0;
-  if (!isFeasible && remainingAmount > 0) {
-    warnings.push('با بودجه هفتگی و درصد تخصیص فعلی، تکمیل هدف دیرتر از تاریخ مقصد خواهد بود.');
+  const isFeasible = isOpenEnded
+    ? remainingAmount === 0 || goal.weeklyBudgetAmount > 0
+    : monthsNeeded <= Math.ceil(monthsAvailable) && monthlyContribution > 0;
+  if (!isOpenEnded && !isFeasible && remainingAmount > 0) {
+    warnings.push('با بودجه هفتگی و درصد تخصیص فعلی، تکمیل هدف دیرتر از تاریخ سررسید خواهد بود.');
+  } else if (isOpenEnded && goal.weeklyBudgetAmount <= 0 && remainingAmount > 0) {
+    warnings.push('برای برآورد زمان تأمین بودجه، سهم بودجه هفتگی یا منبع تأمین مشخص شود.');
   }
   if (goal.allocationPct < 15) {
     warnings.push('درصد تخصیص کمتر از ۱۵٪ سرعت رسیدن به هدف را کاهش می‌دهد.');
@@ -1412,7 +1428,9 @@ export function computeGoalPlan(
     warnings.push(`افت ضریب سود (PF زیر ۱.۰) حدود ${etaShiftDays} روز رسیدن به این هدف را به تعویق انداخته است.`);
   }
 
-  const weeklyTargetInGoalCurrency = Number((remainingAmount / Math.max(1, daysToTarget / 7)).toFixed(2));
+  const weeklyTargetInGoalCurrency = isOpenEnded
+    ? Number(Math.max(1, goal.weeklyBudgetAmount || remainingAmount / 12).toFixed(2))
+    : Number((remainingAmount / Math.max(1, daysToTarget / 7)).toFixed(2));
   const dailyTargetInGoalCurrency = Number((weeklyTargetInGoalCurrency / 5).toFixed(2)); // 5 trading days/week
 
   return {
@@ -1422,6 +1440,7 @@ export function computeGoalPlan(
     monthsNeeded,
     projectedDate: projected.toISOString(),
     isFeasible,
+    isOpenEnded,
     warnings,
     dailyTargetInGoalCurrency,
     weeklyTargetInGoalCurrency,

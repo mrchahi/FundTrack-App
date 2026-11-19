@@ -34,6 +34,7 @@ interface CommandItem {
 
 interface CommandPaletteModalProps {
   open: boolean;
+  initialQuery?: string;
   onClose: () => void;
   state: FundTrackState;
   onNavigate: (cat: MainCategory, sub?: string) => void;
@@ -46,6 +47,7 @@ interface CommandPaletteModalProps {
 
 export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   open,
+  initialQuery,
   onClose,
   state,
   onNavigate,
@@ -63,11 +65,11 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
 
   useEffect(() => {
     if (open) {
-      setQuery('');
+      setQuery(initialQuery ?? '');
       setActiveIndex(0);
       setTimeout(() => inputRef.current?.focus(), 20);
     }
-  }, [open]);
+  }, [open, initialQuery]);
 
   const allItems = useMemo<CommandItem[]>(() => {
     const items: CommandItem[] = [

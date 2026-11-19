@@ -60,7 +60,7 @@ export const LocalAiCommandModal: React.FC<LocalAiCommandModalProps> = ({
       {open && (
         <section
           aria-label={t(lang, 'گفتگو با دستیار هوشمند', 'Assistant Chat Window')}
-          className="fixed bottom-22 end-5 z-[72] w-[min(calc(100vw-2rem),430px)] h-[min(76vh,610px)] rounded-2xl glass-surface-high border border-[var(--ft-border-strong)] shadow-2xl flex flex-col overflow-hidden no-print"
+          className="fixed bottom-34 lg:bottom-22 end-3 sm:end-5 z-[60] w-[min(calc(100vw-1.5rem),430px)] h-[min(68vh,590px)] rounded-3xl glass-surface-high border border-[var(--ft-border-strong)] shadow-2xl flex flex-col overflow-hidden no-print"
         >
           {/* Compact Support Header */}
           <header className="px-4 py-3 border-b border-[var(--ft-border)] flex items-center justify-between gap-2 shrink-0 bg-[var(--ft-surface-solid)]/55">
@@ -133,13 +133,13 @@ export const LocalAiCommandModal: React.FC<LocalAiCommandModalProps> = ({
         </section>
       )}
 
-      {/* Standard Floating Trigger Button (FTB) */}
+      {/* Material Design 3 Floating Trigger Button (FTB - Desktop Only; sits below drawer blur z-[80]) */}
       <button
         type="button"
         onClick={onToggle}
         title={t(lang, 'گفتگو با دستیار هوشمند (Ctrl+J)', 'Open Assistant Chat (Ctrl+J)')}
         aria-label={t(lang, 'دستیار هوشمند', 'Open Assistant Chat')}
-        className="fixed bottom-5 end-5 z-[73] w-14 h-14 rounded-full ft-accent-gradient shadow-xl hover:scale-105 active:scale-95 transition-transform flex items-center justify-center cursor-pointer no-print"
+        className="hidden lg:flex fixed bottom-5 end-5 z-[45] w-14 h-14 rounded-2xl ft-accent-gradient shadow-xl hover:scale-105 active:scale-95 transition-transform items-center justify-center cursor-pointer no-print"
       >
         {open ? <X className="w-6 h-6" /> : <MessageCircle className="w-6 h-6" />}
       </button>

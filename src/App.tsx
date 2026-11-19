@@ -3,17 +3,21 @@ import {
   Activity,
   Bot,
   CandlestickChart,
+  Cloud,
   Eye,
   EyeOff,
+  KeyRound,
   LayoutDashboard,
   Lock,
   Menu,
   Moon,
   Plus,
+  RefreshCw,
   Search,
   Settings,
   Sun,
   Target,
+  Trash2,
   Wallet,
   X,
 } from 'lucide-react';
@@ -56,7 +60,9 @@ import {
 } from './utils/domain';
 import {
   addJalaliMonths,
+  formatJalaliDate,
   getCurrentJalaliMonthKey,
+  getJalaliWeekdayName,
   getNextJalaliDayOccurrence,
   toJalali,
   toLocalIsoDate,
@@ -77,10 +83,62 @@ import { HeaderNotificationDropdown } from './components/HeaderNotificationDropd
 import { CommandPaletteModal } from './components/CommandPaletteModal';
 import { LocalAiCommandModal } from './components/LocalAiCommandModal';
 import { OfflineIndicator, PWAInstallButton } from './components/PWAInstallButton';
+import { ResponsiveModalSheet } from './components/M3MobilePrimitives';
 import { computeDailyDrawdownStatus } from './utils/intelligence';
 import { fetchFreeEconomicCalendar, mergeEconomicEvents } from './utils/economicNews';
+import { hashPin } from './utils/security';
+import { playNewsAlarmSound, unlockAudioContext } from './utils/soundAlert';
+import {
+  clearMobilePairingHash,
+  fetchHostPairingKey,
+  fetchLanSyncInfo,
+  LanSyncServerInfo,
+  parseMobilePairingHash,
+  pullStateFromLanDb,
+  pushStateToLanDb,
+} from './utils/lanSync';
 
 const STORAGE_KEY = 'fundtrack_v2_state';
+
+function hasPersistedLocalStorage(): boolean {
+  try {
+    if (localStorage.getItem(STORAGE_KEY)) return true;
+    const embedded = (
+      window as unknown as { __FUNDTRACK_EMBEDDED_STATE__?: unknown }
+    ).__FUNDTRACK_EMBEDDED_STATE__;
+    return Boolean(embedded);
+  } catch {
+    return false;
+  }
+}
+
+const DesktopLiveClock: React.FC<{ lang: 'fa' | 'en' }> = React.memo(({ lang }) => {
+  const [now, setNow] = useState<Date>(() => new Date());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 15000);
+    return () => clearInterval(id);
+  }, []);
+
+  const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const dateLabel =
+    lang === 'fa'
+      ? `${getJalaliWeekdayName(now)}، ${formatJalaliDate(now, 'fa')}`
+      : now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+
+  return (
+    <div
+      className="hidden lg:flex h-11 px-3.5 rounded-full glass-surface items-center gap-2 text-xs shrink-0"
+      title={lang === 'fa' ? 'تاریخ و ساعت زنده (تقویم جلالی)' : 'Live Date & Time'}
+    >
+      <span className="text-[var(--ft-text-secondary)] font-medium whitespace-nowrap">{dateLabel}</span>
+      <span className="w-1 h-1 rounded-full bg-[var(--ft-accent)] opacity-80" />
+      <span className="font-num font-bold text-[var(--ft-text-primary)] tabular-nums" dir="ltr">
+        {timeStr}
+      </span>
+    </div>
+  );
+});
 
 interface ToastMessage {
   id: string;
@@ -170,8 +228,10 @@ export default function App() {
 
   const [timeRange, setTimeRange] = useState<TimeRange>(state.settings.defaultRange);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [drawerSearchQuery, setDrawerSearchQuery] = useState('');
   const [quickOpen, setQuickOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteInitialQuery, setPaletteInitialQuery] = useState('');
   const [aiCommandOpen, setAiCommandOpen] = useState(false);
   const [inspectedTrade, setInspectedTrade] = useState<Trade | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -186,10 +246,17 @@ export default function App() {
     suggestedIsDemo: boolean;
   } | null>(null);
   const [isLocked, setIsLocked] = useState<boolean>(() => state.settings.pinEnabled);
+  const [usingDemoFallback, setUsingDemoFallback] = useState<boolean>(() => !hasPersistedLocalStorage());
+  const [syncBannerDismissed, setSyncBannerDismissed] = useState(false);
+  const [serverSyncInfo, setServerSyncInfo] = useState<LanSyncServerInfo | null>(null);
+  const [pairingKeyInput, setPairingKeyInput] = useState('');
+  const [syncBusy, setSyncBusy] = useState(false);
 
   const stateRef = useRef(state);
   stateRef.current = state;
   const eaPollInFlightRef = useRef(false);
+  const skipNextAutoPushRef = useRef(false);
+  const lastAutoPushDigestRef = useRef('');
 
   // Quick Transaction state inside Global Quick Action Modal
   const [qAmount, setQAmount] = useState('');
@@ -216,7 +283,7 @@ export default function App() {
     []
   );
 
-  // Persist state
+  // Persist state (keep clean local storage in sync; don't overwrite real sync before pairing finishes)
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -224,6 +291,275 @@ export default function App() {
       // Ignore storage quota issues
     }
   }, [state]);
+
+  const applySyncedState = useCallback(
+    (
+      restored: FundTrackState,
+      meta?: {
+        lanUrl?: string;
+        lanKey?: string;
+        channel?: 'lan' | 'gdrive';
+        revision?: number;
+        updatedAt?: string;
+      }
+    ) => {
+      const base = createEmptyState();
+      const nowIso = meta?.updatedAt || new Date().toISOString();
+      const merged: FundTrackState = {
+        ...base,
+        ...restored,
+        settings: {
+          ...base.settings,
+          ...(restored.settings || {}),
+          lanSyncEnabled: true,
+          lanSyncUrl: meta?.lanUrl ?? restored.settings?.lanSyncUrl ?? stateRef.current.settings.lanSyncUrl,
+          lanSyncKey: meta?.lanKey ?? restored.settings?.lanSyncKey ?? stateRef.current.settings.lanSyncKey,
+          stateRevision: meta?.revision ?? restored.settings?.stateRevision ?? stateRef.current.settings.stateRevision,
+          stateUpdatedAt: nowIso,
+          lastLanSyncAt: nowIso,
+          lastSyncMode: meta?.channel ?? 'lan',
+        },
+        gamification: {
+          ...base.gamification,
+          ...(restored.gamification || {}),
+        },
+      };
+      skipNextAutoPushRef.current = true;
+      setUsingDemoFallback(false);
+      setSyncBannerDismissed(true);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+      } catch {
+        // Ignore quota errors
+      }
+      setState(merged);
+    },
+    []
+  );
+
+  // Boot & Focus Sync: 1) Handle #ft_pair= deep pairing link; 2) Auto-pull newer server data; 3) Detect demo state on fresh mobile
+  useEffect(() => {
+    let cancelled = false;
+    const initialHasLocal = !usingDemoFallback;
+
+    const bootstrapSync = async () => {
+      const paired = parseMobilePairingHash();
+      if (paired) {
+        clearMobilePairingHash();
+        setState((prev) => ({
+          ...prev,
+          settings: {
+            ...prev.settings,
+            lanSyncEnabled: true,
+            lanSyncUrl: paired.url,
+            lanSyncKey: paired.syncKey,
+          },
+        }));
+        try {
+          const pulled = await pullStateFromLanDb({
+            url: paired.url,
+            syncKey: paired.syncKey,
+          });
+          if (!cancelled) {
+            applySyncedState(pulled.state, {
+              lanUrl: paired.url,
+              lanKey: paired.syncKey,
+              channel: 'lan',
+              revision: pulled.revision,
+              updatedAt: pulled.updatedAt,
+            });
+            showToast(
+              t(
+                pulled.state.settings.language,
+                'اتصال برقرار شد و داده‌های واقعی با موفقیت دریافت شدند',
+                'Device paired & real data loaded cleanly'
+              ),
+              'success'
+            );
+          }
+        } catch (err: unknown) {
+          if (cancelled) return;
+          const msg = err instanceof Error ? err.message : '';
+          if (msg === 'PASSPHRASE_REQUIRED') {
+            setCategory('system');
+            setSystemSub('backup');
+            showToast(
+              t(
+                stateRef.current.settings.language,
+                'لینک متصل شد — داده‌ها رمزنگاری E2E هستند؛ عبارت رمز را در بخش پشتیبان وارد کنید.',
+                'Paired! Data is E2E encrypted — enter your passphrase in Backup & Install.'
+              ),
+              'info'
+            );
+          } else if (msg === 'NO_LAN_DATA_YET') {
+            showToast(
+              t(
+                stateRef.current.settings.language,
+                'لینک جفت‌سازی ثبت شد؛ هنوز داده‌ای روی سرور ذخیره نشده است.',
+                'Pairing link saved; no snapshot pushed to server yet.'
+              ),
+              'info'
+            );
+          } else {
+            showToast(
+              t(
+                stateRef.current.settings.language,
+                'دریافت خودکار از لینک جفت‌سازی انجام نشد؛ از بخش پشتیبان بررسی کنید.',
+                'Auto-pull from pairing link failed; check Sync settings.'
+              ),
+              'error'
+            );
+          }
+        }
+        const infoAfter = await fetchLanSyncInfo(paired.url);
+        if (!cancelled) setServerSyncInfo(infoAfter);
+        return;
+      }
+
+      const targetUrl = stateRef.current.settings.lanSyncUrl;
+      const info = await fetchLanSyncInfo(targetUrl);
+      if (cancelled) return;
+      setServerSyncInfo(info);
+
+      if (info.reachable && info.hasData && !info.encrypted) {
+        let syncKey = stateRef.current.settings.lanSyncKey?.trim() || '';
+        if (!syncKey && !initialHasLocal) {
+          syncKey = (await fetchHostPairingKey(targetUrl)) || '';
+        }
+        const localRev = stateRef.current.settings.stateRevision ?? 0;
+        const shouldAutoPull =
+          Boolean(syncKey) &&
+          ((stateRef.current.settings.lanSyncEnabled && info.revision > localRev) || !initialHasLocal);
+        if (shouldAutoPull) {
+          try {
+            const pulled = await pullStateFromLanDb({ url: targetUrl, syncKey });
+            if (!cancelled) {
+              applySyncedState(pulled.state, {
+                lanUrl: targetUrl,
+                lanKey: syncKey,
+                channel: 'lan',
+                revision: pulled.revision,
+                updatedAt: pulled.updatedAt,
+              });
+              showToast(
+                t(
+                  pulled.state.settings.language,
+                  'آخرین داده‌های واقعی از سرور میزبان همگام‌سازی شدند',
+                  'Real data synced from host database'
+                ),
+                'info'
+              );
+            }
+          } catch {
+            // Keep silent fallback; banner handles manual pairing key if invalid/missing
+          }
+        }
+      }
+    };
+
+    void bootstrapSync();
+
+    const checkOnFocus = () => {
+      if (document.visibilityState === 'hidden') return;
+      const sNow = stateRef.current.settings;
+      if (!sNow.lanSyncEnabled || !sNow.lanSyncKey?.trim()) return;
+      void fetchLanSyncInfo(sNow.lanSyncUrl).then(async (info) => {
+        if (cancelled) return;
+        setServerSyncInfo(info);
+        if (
+          info.reachable &&
+          info.hasData &&
+          !info.encrypted &&
+          info.revision > (stateRef.current.settings.stateRevision ?? 0)
+        ) {
+          try {
+            const pulled = await pullStateFromLanDb({
+              url: sNow.lanSyncUrl,
+              syncKey: sNow.lanSyncKey!,
+            });
+            if (!cancelled) {
+              applySyncedState(pulled.state, {
+                lanUrl: sNow.lanSyncUrl,
+                lanKey: sNow.lanSyncKey,
+                channel: 'lan',
+                revision: pulled.revision,
+                updatedAt: pulled.updatedAt,
+              });
+              showToast(
+                t(pulled.state.settings.language, 'تغییرات جدید از دستگاه دیگر دریافت شد', 'Synced latest update'),
+                'info'
+              );
+            }
+          } catch {
+            // Ignore transient network errors
+          }
+        }
+      });
+    };
+
+    window.addEventListener('focus', checkOnFocus);
+    document.addEventListener('visibilitychange', checkOnFocus);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', checkOnFocus);
+      document.removeEventListener('visibilitychange', checkOnFocus);
+    };
+  }, [applySyncedState, showToast]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Debounced Auto-Push when Live Multi-Device Sync is enabled (and not encrypted/demo)
+  useEffect(() => {
+    const sNow = state.settings;
+    if (!sNow.lanSyncEnabled || !sNow.lanSyncKey?.trim() || sNow.e2eEncryptionEnabled || usingDemoFallback) {
+      return;
+    }
+
+    const digest = JSON.stringify({
+      ...state,
+      settings: {
+        ...state.settings,
+        stateRevision: undefined,
+        stateUpdatedAt: undefined,
+        lastLanSyncAt: undefined,
+        lastSyncMode: undefined,
+      },
+    });
+
+    if (skipNextAutoPushRef.current) {
+      lastAutoPushDigestRef.current = digest;
+      skipNextAutoPushRef.current = false;
+      return;
+    }
+    if (!lastAutoPushDigestRef.current) {
+      lastAutoPushDigestRef.current = digest;
+    }
+    if (digest === lastAutoPushDigestRef.current) return;
+
+    const timer = setTimeout(() => {
+      void pushStateToLanDb(stateRef.current, {
+        url: stateRef.current.settings.lanSyncUrl,
+        syncKey: stateRef.current.settings.lanSyncKey!,
+      })
+        .then((res) => {
+          lastAutoPushDigestRef.current = digest;
+          skipNextAutoPushRef.current = true;
+          setState((prev) => ({
+            ...prev,
+            settings: {
+              ...prev.settings,
+              stateRevision: res.revision,
+              stateUpdatedAt: res.updatedAt,
+              lastLanSyncAt: res.updatedAt,
+              lastSyncMode: 'lan',
+            },
+          }));
+        })
+        .catch(() => {
+          // Off-LAN or temporarily offline — user can push via Drive or next reconnect
+        });
+    }, 2200);
+
+    return () => clearTimeout(timer);
+  }, [state, usingDemoFallback]);
 
   // Apply theme, dark mode, RTL/LTR, and glass intensity CSS variables
   useEffect(() => {
@@ -253,6 +589,24 @@ export default function App() {
     state.settings.glassBlur,
     state.settings.highContrastCards,
   ]);
+
+  // Auto-migrate any legacy plaintext pinCode to salted SHA-256 pinHash
+  useEffect(() => {
+    if (state.settings.pinEnabled && state.settings.pinCode && !state.settings.pinHash) {
+      let cancelled = false;
+      void hashPin(state.settings.pinCode).then((hashed) => {
+        if (cancelled) return;
+        setState((prev) => ({
+          ...prev,
+          settings: { ...prev.settings, pinHash: hashed, pinCode: '' },
+        }));
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+    return undefined;
+  }, [state.settings.pinEnabled, state.settings.pinCode, state.settings.pinHash]);
 
   // Global Ctrl+K Command Palette & Ctrl+J Smart AI Quick Command Shortcuts
   useEffect(() => {
@@ -335,6 +689,102 @@ export default function App() {
       };
     });
   }, [state.trades, state.mt5Accounts, state.settings.dailyMaxLossPct]);
+
+  // Unlock Web Audio API on first user gesture so scheduled news chimes work reliably
+  useEffect(() => {
+    const unlock = () => unlockAudioContext();
+    window.addEventListener('pointerdown', unlock, { passive: true, once: true });
+    window.addEventListener('keydown', unlock, { passive: true, once: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+  }, []);
+
+  // Background scheduler: check today's alarm-enabled economic news every 15s and chime + notify within configured lead minutes
+  useEffect(() => {
+    const checkDueNewsAlarms = () => {
+      const curr = stateRef.current;
+      const leadMins = Math.max(1, curr.settings.newsAlertLeadMinutes ?? 15);
+      const soundOn = curr.settings.newsAlertSoundEnabled !== false;
+      const now = new Date();
+      const nowMs = now.getTime();
+      const triggeredEvents: EconomicEvent[] = [];
+
+      for (const ev of curr.economicEvents) {
+        if (!ev.alarmEnabled || ev.alarmTriggered) continue;
+        const evDate = new Date(ev.timestamp);
+        const evMs = evDate.getTime();
+        if (
+          Number.isNaN(evMs) ||
+          evDate.getFullYear() !== now.getFullYear() ||
+          evDate.getMonth() !== now.getMonth() ||
+          evDate.getDate() !== now.getDate()
+        ) {
+          continue;
+        }
+        const minsUntil = (evMs - nowMs) / 60000;
+        if (minsUntil <= leadMins && minsUntil >= -5) {
+          triggeredEvents.push(ev);
+        }
+      }
+
+      if (triggeredEvents.length === 0) return;
+
+      const triggeredIds = new Set(triggeredEvents.map((e) => e.id));
+      const newNotifs: NotificationItem[] = triggeredEvents.map((ev) => {
+        const minsLeft = Math.max(0, Math.round((new Date(ev.timestamp).getTime() - nowMs) / 60000));
+        return {
+          id: `notif_news_auto_${ev.id}_${now.getFullYear()}${now.getMonth() + 1}${now.getDate()}`,
+          title: t(
+            curr.settings.language,
+            `هشدار خبر مهم (${minsLeft} دقیقه مانده): ${ev.title}`,
+            `News Alert (${minsLeft}m left): ${ev.title}`
+          ),
+          detail: `${ev.currency} · ${t(curr.settings.language, 'پیش‌بینی:', 'Forecast:')} ${ev.forecast} · ${t(
+            curr.settings.language,
+            'تنظیم یادآور:',
+            'Lead:'
+          )} ${leadMins}m`,
+          daysLeft: 0,
+          source: 'news',
+          severity: 'danger',
+          targetId: ev.id,
+          read: false,
+          createdAt: now.toISOString(),
+        };
+      });
+
+      setState((prev) => {
+        const existingIds = new Set(prev.notifications.map((n) => n.id));
+        const uniqueNewNotifs = newNotifs.filter((n) => !existingIds.has(n.id));
+        return {
+          ...prev,
+          economicEvents: prev.economicEvents.map((ev) =>
+            triggeredIds.has(ev.id) ? { ...ev, alarmTriggered: true } : ev
+          ),
+          notifications: [...uniqueNewNotifs, ...prev.notifications].slice(0, 40),
+        };
+      });
+
+      if (soundOn) {
+        playNewsAlarmSound();
+      }
+      const firstEv = triggeredEvents[0];
+      showToast(
+        t(
+          curr.settings.language,
+          `هشدار خبر تا ${leadMins} دقیقه دیگر: ${firstEv.title}`,
+          `News alert within ${leadMins}m: ${firstEv.title}`
+        ),
+        'info'
+      );
+    };
+
+    checkDueNewsAlarms();
+    const interval = setInterval(checkDueNewsAlarms, 15000);
+    return () => clearInterval(interval);
+  }, [showToast]);
 
   // FX Rate Refresh handler (calls Express /api/fx-rate, falls back to direct https://api.zipodo.ir/usdt/ in single-file mode)
   const handleRefreshFxRate = useCallback(
@@ -836,12 +1286,18 @@ export default function App() {
   const handleTriggerNewsAlarm = (eventId: string) => {
     const ev = state.economicEvents.find((e) => e.id === eventId);
     if (!ev) return;
+    const leadMins = state.settings.newsAlertLeadMinutes ?? 15;
     const notif: NotificationItem = {
       id: `notif_news_${Date.now()}`,
       title: t(lang, `زنگ هشدار خبر: ${ev.title}`, `News Alarm: ${ev.title}`),
-      detail: `${ev.currency} · ${t(lang, 'زمان انتشار نزدیک است', 'Release imminent')}`,
+      detail: `${ev.currency} · ${t(
+        lang,
+        `یادآور ${leadMins} دقیقه قبل از انتشار`,
+        `Alert ${leadMins}m before release`
+      )}`,
       daysLeft: 0,
       source: 'news',
+      severity: 'warning',
       targetId: ev.id,
       read: false,
       createdAt: new Date().toISOString(),
@@ -853,6 +1309,9 @@ export default function App() {
         item.id === eventId ? { ...item, alarmTriggered: true, alarmEnabled: true } : item
       ),
     }));
+    if (state.settings.newsAlertSoundEnabled !== false) {
+      playNewsAlarmSound();
+    }
     showToast(t(lang, `زنگ به صدا درآمد: ${ev.title}`, `Alarm rang: ${ev.title}`), 'info');
   };
 
@@ -1679,8 +2138,21 @@ export default function App() {
   };
 
   const handleChangeGoalStatus = (goalId: string, status: Goal['status']) => {
+    const nowIso = new Date().toISOString();
     setState((prev) => {
-      const updated = prev.goals.map((g) => (g.id === goalId ? { ...g, status } : g));
+      const updated = prev.goals.map((g) => {
+        if (g.id !== goalId) return g;
+        if (status === 'completed') {
+          return { ...g, status, completedAt: g.completedAt ?? nowIso };
+        }
+        if (status === 'archived') {
+          return { ...g, status, archivedAt: g.archivedAt ?? nowIso };
+        }
+        if (status === 'active') {
+          return { ...g, status, archivedAt: undefined };
+        }
+        return { ...g, status };
+      });
       const poolIrt = prev.settings.weeklyGoalPoolIrt ?? 18000000;
       return {
         ...prev,
@@ -1773,22 +2245,30 @@ export default function App() {
     }
 
     let newlyCompletedCount = 0;
+    const completedTitles: string[] = [];
+    const nowIso = new Date().toISOString();
 
     setState((prev) => {
-      const nextGoals = prev.goals.map((g) => {
+      const mappedGoals = prev.goals.map((g) => {
         const alloc = allocs.find((a) => a.goalId === g.id);
         if (!alloc) return g;
         const nextSaved = Number((g.savedAmount + alloc.weeklyAmountInGoalCurrency).toFixed(2));
         const justCompleted = g.status === 'active' && nextSaved >= g.targetAmount;
-        if (justCompleted) newlyCompletedCount += 1;
+        if (justCompleted) {
+          newlyCompletedCount += 1;
+          completedTitles.push(g.title);
+        }
         return {
           ...g,
           savedAmount: nextSaved,
           allocationPct: Math.round(alloc.sharePct),
           weeklyBudgetAmount: Math.round(alloc.weeklyAmountInGoalCurrency),
           status: justCompleted ? ('completed' as const) : g.status,
+          completedAt: justCompleted ? (g.completedAt ?? nowIso) : g.completedAt,
         };
       });
+
+      const rebalancedGoals = rebalanceGoalList(mappedGoals, cleanPool, prev.settings.usdToman);
 
       return {
         ...prev,
@@ -1806,27 +2286,53 @@ export default function App() {
                 amount: deductFromAcc,
                 currency: acc.currency,
                 accountId: acc.id,
-                date: new Date().toISOString(),
+                date: nowIso,
                 note: t(lang, 'بودجه‌ریزی هفتگی اهداف (وزن‌دار بر اساس اولویت)', 'Weekly Priority-Weighted Goal Pool'),
                 source: 'goal_allocation',
               },
               ...prev.transactions,
             ]
           : prev.transactions,
-        goals: nextGoals,
+        goals: rebalancedGoals,
         gamification: {
           ...prev.gamification,
           xpTotal: prev.gamification.xpTotal + 120 + newlyCompletedCount * 150,
         },
+        notifications:
+          newlyCompletedCount > 0
+            ? [
+                {
+                  id: `notif_pool_done_${Date.now()}`,
+                  title: t(
+                    lang,
+                    `تکمیل و آرشیو خودکار ${newlyCompletedCount} هدف مالی`,
+                    `${newlyCompletedCount} Goal(s) Reached 100% & Archived`
+                  ),
+                  detail: completedTitles.join(' · '),
+                  daysLeft: 0,
+                  source: 'goal' as const,
+                  severity: 'success' as const,
+                  read: false,
+                  createdAt: nowIso,
+                },
+                ...prev.notifications,
+              ].slice(0, 40)
+            : prev.notifications,
       };
     });
 
     showToast(
-      t(
-        lang,
-        `بودجه هفتگی بین ${allocs.length} هدف فعال بر اساس وزن اولویت تقسیم شد (+120 XP)`,
-        `Weekly pool distributed across ${allocs.length} active goals by priority weight (+120 XP)`
-      ),
+      newlyCompletedCount > 0
+        ? t(
+            lang,
+            `بودجه تقسیم شد و ${newlyCompletedCount} هدف پاس‌شده به تاریخچه منتقل گردید (+${120 + newlyCompletedCount * 150} XP)`,
+            `Pool distributed & ${newlyCompletedCount} completed goal(s) archived to history (+${120 + newlyCompletedCount * 150} XP)`
+          )
+        : t(
+            lang,
+            `بودجه هفتگی بین ${allocs.length} هدف فعال بر اساس وزن اولویت تقسیم شد (+120 XP)`,
+            `Weekly pool distributed across ${allocs.length} active goals by priority weight (+120 XP)`
+          ),
       'success'
     );
   };
@@ -1876,59 +2382,71 @@ export default function App() {
 
     const nextSaved = goal.savedAmount + amount;
     const completed = nextSaved >= goal.targetAmount;
+    const nowIso = new Date().toISOString();
 
-    setState((prev) => ({
-      ...prev,
-      bankAccounts: acc
-        ? prev.bankAccounts.map((a) =>
-            a.id === acc.id ? { ...a, balance: Number((a.balance - deductFromAcc).toFixed(2)) } : a
-          )
-        : prev.bankAccounts,
-      transactions: acc
-        ? [
-            {
-              id: `tx_goal_${Date.now()}`,
-              type: 'out',
-              amount: deductFromAcc,
-              currency: acc.currency,
-              accountId: acc.id,
-              date: new Date().toISOString(),
-              note: `${t(lang, 'تخصیص به هدف:', 'Goal Allocation:')} ${goal.title}`,
-              source: 'goal_allocation',
-            },
-            ...prev.transactions,
-          ]
-        : prev.transactions,
-      goals: prev.goals.map((g) =>
+    setState((prev) => {
+      const updatedGoals = prev.goals.map((g) =>
         g.id === goalId
-          ? { ...g, savedAmount: nextSaved, status: completed ? 'completed' : g.status }
+          ? {
+              ...g,
+              savedAmount: nextSaved,
+              status: completed ? ('completed' as const) : g.status,
+              completedAt: completed ? (g.completedAt ?? nowIso) : g.completedAt,
+            }
           : g
-      ),
-      gamification: {
-        ...prev.gamification,
-        xpTotal: prev.gamification.xpTotal + (completed ? 250 : 60),
-      },
-      notifications: completed
-        ? [
-            {
-              id: `notif_goal_done_${Date.now()}`,
-              title: t(lang, `تکمیل ۱۰۰٪ هدف «${goal.title}»`, `Goal "${goal.title}" Completed!`),
-              detail: t(lang, 'پاداش +250 XP به حساب شما اضافه شد', '+250 XP reward added'),
-              daysLeft: 0,
-              source: 'goal' as const,
-              severity: 'success' as const,
-              targetId: goal.id,
-              read: false,
-              createdAt: new Date().toISOString(),
-            },
-            ...prev.notifications,
-          ].slice(0, 40)
-        : prev.notifications,
-    }));
+      );
+      const poolIrt = prev.settings.weeklyGoalPoolIrt ?? 18000000;
+      return {
+        ...prev,
+        bankAccounts: acc
+          ? prev.bankAccounts.map((a) =>
+              a.id === acc.id ? { ...a, balance: Number((a.balance - deductFromAcc).toFixed(2)) } : a
+            )
+          : prev.bankAccounts,
+        transactions: acc
+          ? [
+              {
+                id: `tx_goal_${Date.now()}`,
+                type: 'out',
+                amount: deductFromAcc,
+                currency: acc.currency,
+                accountId: acc.id,
+                date: nowIso,
+                note: `${t(lang, 'تخصیص به هدف:', 'Goal Allocation:')} ${goal.title}`,
+                source: 'goal_allocation',
+              },
+              ...prev.transactions,
+            ]
+          : prev.transactions,
+        goals: completed
+          ? rebalanceGoalList(updatedGoals, poolIrt, prev.settings.usdToman)
+          : updatedGoals,
+        gamification: {
+          ...prev.gamification,
+          xpTotal: prev.gamification.xpTotal + (completed ? 250 : 60),
+        },
+        notifications: completed
+          ? [
+              {
+                id: `notif_goal_done_${Date.now()}`,
+                title: t(lang, `تکمیل ۱۰۰٪ هدف «${goal.title}»`, `Goal "${goal.title}" Completed!`),
+                detail: t(lang, 'پاداش +250 XP اضافه شد و هدف در تاریخچه آرشیو گردید', '+250 XP added & archived to Goal History'),
+                daysLeft: 0,
+                source: 'goal' as const,
+                severity: 'success' as const,
+                targetId: goal.id,
+                read: false,
+                createdAt: nowIso,
+              },
+              ...prev.notifications,
+            ].slice(0, 40)
+          : prev.notifications,
+      };
+    });
 
     showToast(
       completed
-        ? t(lang, `تبریک! هدف «${goal.title}» ۱۰۰٪ تکمیل شد! (+250 XP)`, `Goal "${goal.title}" completed! (+250 XP)`)
+        ? t(lang, `تبریک! هدف «${goal.title}» پاس شد و به تاریخچه منتقل گردید (+250 XP)`, `Goal "${goal.title}" passed & archived to history! (+250 XP)`)
         : t(lang, 'مبلغ به هدف تخصیص داده شد (+60 XP)', 'Funds allocated to goal (+60 XP)'),
       'success'
     );
@@ -1945,29 +2463,68 @@ export default function App() {
     const allocs = computePriorityGoalAllocations(state.goals, poolIrt, state.settings.usdToman);
     if (allocs.length === 0) return;
 
-    setState((prev) => ({
-      ...prev,
-      goals: prev.goals.map((g) => {
+    const nowIso = new Date().toISOString();
+    const completedNames: string[] = [];
+
+    setState((prev) => {
+      const mapped = prev.goals.map((g) => {
         if (g.status !== 'active') return g;
         const alloc = allocs.find((a) => a.goalId === g.id);
         const shareRatio = (alloc?.sharePct ?? g.allocationPct) / 100;
         const shareUsd = profitUsd * shareRatio;
         const shareInGoalCurr = convertCurrency(shareUsd, 'USD', g.currency, prev.settings.usdToman);
         const nextSaved = Number((g.savedAmount + shareInGoalCurr).toFixed(2));
+        const justCompleted = nextSaved >= g.targetAmount;
+        if (justCompleted) completedNames.push(g.title);
         return {
           ...g,
           savedAmount: nextSaved,
-          status: nextSaved >= g.targetAmount ? 'completed' : 'active',
+          status: justCompleted ? ('completed' as const) : ('active' as const),
+          completedAt: justCompleted ? (g.completedAt ?? nowIso) : g.completedAt,
         };
-      }),
-      gamification: {
-        ...prev.gamification,
-        xpTotal: prev.gamification.xpTotal + 100,
-      },
-    }));
+      });
+
+      const completedCount = completedNames.length;
+      const rebalanced = rebalanceGoalList(mapped, poolIrt, prev.settings.usdToman);
+
+      return {
+        ...prev,
+        goals: rebalanced,
+        gamification: {
+          ...prev.gamification,
+          xpTotal: prev.gamification.xpTotal + 100 + completedCount * 150,
+        },
+        notifications:
+          completedCount > 0
+            ? [
+                {
+                  id: `notif_profit_goal_${Date.now()}`,
+                  title: t(
+                    lang,
+                    `تکمیل ${completedCount} هدف با سود ترید امروز`,
+                    `${completedCount} Goal(s) Passed via Today's Profit`
+                  ),
+                  detail: completedNames.join(' · '),
+                  daysLeft: 0,
+                  source: 'goal' as const,
+                  severity: 'success' as const,
+                  read: false,
+                  createdAt: nowIso,
+                },
+                ...prev.notifications,
+              ].slice(0, 40)
+            : prev.notifications,
+      };
+    });
 
     showToast(
-      t(lang, 'سود ترید امروز بر اساس وزن اولویت بین اهداف فعال تقسیم شد (+100 XP)', "Today's profit distributed by priority weight (+100 XP)"),
+      completedNames.length > 0
+        ? t(
+            lang,
+            `سود تقسیم شد و ${completedNames.length} هدف پاس‌شده به تاریخچه منتقل گردید (+${100 + completedNames.length * 150} XP)`,
+            `Profit distributed & ${completedNames.length} passed goal(s) archived (+${100 + completedNames.length * 150} XP)`
+          )
+        : t(lang, 'سود ترید امروز بر اساس وزن اولویت بین اهداف فعال تقسیم شد (+100 XP)', "Today's profit distributed by priority weight (+100 XP)"),
       'success'
     );
   };
@@ -2120,8 +2677,14 @@ export default function App() {
           showTomanEquivalent: state.settings.showTomanEquivalent,
           pinEnabled: state.settings.pinEnabled,
           pinCode: state.settings.pinCode,
+          pinHash: state.settings.pinHash,
           autoLockMinutes: state.settings.autoLockMinutes,
           privateMode: state.settings.privateMode,
+          lanSyncEnabled: state.settings.lanSyncEnabled,
+          lanSyncUrl: state.settings.lanSyncUrl,
+          lanSyncKey: state.settings.lanSyncKey,
+          lanAutoFallbackDrive: state.settings.lanAutoFallbackDrive,
+          e2eEncryptionEnabled: state.settings.e2eEncryptionEnabled,
           usdToman: state.settings.usdToman,
           fxAutoUpdate: state.settings.fxAutoUpdate,
           defaultRange: state.settings.defaultRange,
@@ -2134,22 +2697,97 @@ export default function App() {
         } catch {
           // Ignore quota errors
         }
+        setUsingDemoFallback(false);
         setState(empty);
         showToast(t(lang, 'تمامی داده‌های پنل با موفقیت پاکسازی شدند', 'All panel data wiped cleanly'), 'success');
       },
     });
   };
 
-  const handleRestoreState = (restored: FundTrackState, target: 'local' | 'gdrive') => {
+  const handleStartEmptyFromDemo = () => {
+    const empty = createEmptyState({
+      language: state.settings.language,
+      theme: state.settings.theme,
+      usdToman: state.settings.usdToman,
+      defaultRange: state.settings.defaultRange,
+      localAi: state.settings.localAi,
+    });
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(empty));
+    } catch {
+      // Ignore quota errors
+    }
+    setUsingDemoFallback(false);
+    setSyncBannerDismissed(true);
+    setState(empty);
+    showToast(t(lang, 'داده‌های دمو حذف شدند — پنل آماده ثبت اطلاعات واقعی شماست', 'Demo data cleared — ready for your real records'), 'success');
+  };
+
+  const handleConnectAndPullFromBanner = async () => {
+    setSyncBusy(true);
+    try {
+      const candidateKey = pairingKeyInput.trim() || state.settings.lanSyncKey?.trim() || '';
+      const activeKey = candidateKey || (await fetchHostPairingKey(state.settings.lanSyncUrl)) || '';
+      if (!activeKey) {
+        showToast(
+          t(
+            lang,
+            'کلید اتصال لازم است (آن را از تنظیمات دسکتاپ ← پشتیبان و نصب کپی کنید یا لینک جفت‌سازی را باز نمایید)',
+            'Pairing key required — copy it or open the 1-click pairing link from Desktop Backup settings'
+          ),
+          'error'
+        );
+        return;
+      }
+      const pulled = await pullStateFromLanDb({
+        url: state.settings.lanSyncUrl,
+        syncKey: activeKey,
+      });
+      applySyncedState(pulled.state, {
+        lanUrl: state.settings.lanSyncUrl,
+        lanKey: activeKey,
+        channel: 'lan',
+        revision: pulled.revision,
+        updatedAt: pulled.updatedAt,
+      });
+      showToast(t(lang, 'داده‌های واقعی شما با موفقیت بارگذاری شدند', 'Real data synced cleanly!'), 'success');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '';
+      if (msg === 'PASSPHRASE_REQUIRED') {
+        setCategory('system');
+        setSystemSub('backup');
+        showToast(t(lang, 'داده‌ها رمزنگاری E2E هستند؛ عبارت رمز را در بخش پشتیبان وارد کنید.', 'E2E encrypted — unlock in Backup & Install.'), 'info');
+      } else {
+        showToast(
+          t(lang, 'کلید اتصال نامعتبر است یا هنوز داده‌ای از دسکتاپ ارسال نشده است', 'Invalid pairing key or no snapshot saved on server yet'),
+          'error'
+        );
+      }
+    } finally {
+      setSyncBusy(false);
+    }
+  };
+
+  const handleRestoreState = (restored: FundTrackState, target: 'local' | 'gdrive' | 'lan') => {
     const base = createEmptyState();
+    const nowIso = new Date().toISOString();
     const merged: FundTrackState = {
       ...base,
       ...restored,
       settings: {
         ...base.settings,
         ...(restored.settings || {}),
-        lastBackupAt: new Date().toISOString(),
+        // Preserve local connection preferences if restored payload omits them
+        lanSyncKey: restored.settings?.lanSyncKey || state.settings.lanSyncKey,
+        lanSyncUrl: restored.settings?.lanSyncUrl || state.settings.lanSyncUrl,
+        lastBackupAt: nowIso,
         lastBackupTarget: target,
+        ...(target === 'lan' || target === 'gdrive'
+          ? {
+              lastLanSyncAt: nowIso,
+              lastSyncMode: target === 'lan' ? ('lan' as const) : ('gdrive' as const),
+            }
+          : {}),
       },
       gamification: {
         ...base.gamification,
@@ -2161,6 +2799,9 @@ export default function App() {
     } catch {
       // Ignore quota errors
     }
+    skipNextAutoPushRef.current = true;
+    setUsingDemoFallback(false);
+    setSyncBannerDismissed(true);
     setState(merged);
   };
 
@@ -2559,6 +3200,13 @@ export default function App() {
 
     if (action.kind === 'add_goal') {
       const initialStatus: Goal['status'] = action.activateImmediately ? 'active' : 'draft';
+      const deadlineMode = action.deadlineMode ?? 'dated';
+      const targetDateIso =
+        deadlineMode === 'open_until_funded'
+          ? new Date(Date.now() + 365 * 86400000).toISOString()
+          : action.targetDate
+          ? new Date(`${action.targetDate}T12:00:00`).toISOString()
+          : new Date(Date.now() + 90 * 86400000).toISOString();
       const newGoal: Goal = {
         id: `goal_${Date.now()}`,
         title: action.goalTitle,
@@ -2566,8 +3214,10 @@ export default function App() {
         currency: action.currency,
         targetAmount: action.targetAmount,
         savedAmount: 0,
-        targetDate: new Date(Date.now() + 90 * 86400000).toISOString(),
+        deadlineMode,
+        targetDate: targetDateIso,
         budgetSource: action.budgetSource,
+        sourceAccountId: action.sourceAccountId,
         weeklyBudgetAmount: action.weeklyBudgetAmount,
         priority: action.priority,
         allocationPct: 20,
@@ -2782,6 +3432,7 @@ export default function App() {
       {isLocked && state.settings.pinEnabled && (
         <PinLockScreen
           expectedPin={state.settings.pinCode}
+          expectedHash={state.settings.pinHash}
           lang={lang}
           onUnlock={() => setIsLocked(false)}
         />
@@ -2889,42 +3540,203 @@ export default function App() {
         </div>
       </aside>
 
-      {/* Mobile Sidebar Drawer */}
+      {/* Material Design 3 Mobile Navigation Drawer (z-[80] covers FABs/FTB/nav under blur) */}
       {mobileMenuOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden bg-black/60 backdrop-blur-sm flex">
-          <div className="w-72 glass-surface-high h-full p-5 flex flex-col justify-between">
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <span className="text-lg font-bold">FundTrack</span>
+        <div className="fixed inset-0 z-[80] lg:hidden bg-black/55 backdrop-blur-md flex">
+          <div className="w-[min(84vw,320px)] glass-surface-high h-full p-4 flex flex-col justify-between overflow-y-auto gap-4 border-e border-[var(--ft-border-strong)] shadow-2xl">
+            <div className="space-y-4">
+              {/* Header Row */}
+              <div className="flex items-center justify-between px-1">
+                <span className="text-base font-bold tracking-tight">FundTrack</span>
                 <button
                   type="button"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="p-2 rounded-lg hover:bg-[var(--ft-surface-hover)] cursor-pointer"
+                  aria-label={t(lang, 'بستن منو', 'Close menu')}
+                  className="w-10 h-10 rounded-full hover:bg-[var(--ft-surface-hover)] flex items-center justify-center cursor-pointer transition-colors"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <nav className="space-y-1.5">
-                {navItems.map((item) => {
-                  const active = category === item.id;
-                  const label = CATEGORY_LABELS[item.id];
-                  return (
+
+              {/* Full-Width Top Search Input inside Drawer (Focus Target 2) */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  setPaletteInitialQuery(drawerSearchQuery);
+                  setMobileMenuOpen(false);
+                  setPaletteOpen(true);
+                }}
+                className="w-full"
+              >
+                <div className="relative w-full">
+                  <Search className="w-4 h-4 text-[var(--ft-accent)] absolute top-1/2 -translate-y-1/2 start-3.5 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={drawerSearchQuery}
+                    onChange={(e) => setDrawerSearchQuery(e.target.value)}
+                    placeholder={t(lang, 'جستجوی سریع در پنل...', 'Quick search across panel...')}
+                    aria-label={t(lang, 'جستجوی سریع', 'Quick search')}
+                    className="w-full h-11 ps-10 pe-9 rounded-2xl bg-[var(--ft-surface-subtle)] border border-[var(--ft-border-strong)] text-xs text-[var(--ft-text-primary)] placeholder:text-[var(--ft-text-muted)] focus:outline-none focus:border-[var(--ft-accent)] focus:ring-2 focus:ring-[var(--ft-accent)]/20 transition-all"
+                  />
+                  {drawerSearchQuery && (
                     <button
-                      key={item.id}
                       type="button"
-                      onClick={() => handleNavigate(item.id)}
-                      className={`w-full px-3.5 py-3 rounded-xl flex items-center gap-3 text-sm font-medium cursor-pointer ${
-                        active
-                          ? 'bg-[var(--ft-accent)] text-[var(--ft-accent-fg)]'
-                          : 'text-[var(--ft-text-secondary)] hover:bg-[var(--ft-surface-hover)]'
-                      }`}
+                      onClick={() => setDrawerSearchQuery('')}
+                      aria-label={t(lang, 'پاک کردن جستجو', 'Clear search')}
+                      className="w-7 h-7 rounded-full hover:bg-[var(--ft-surface-hover)] flex items-center justify-center text-[var(--ft-text-muted)] absolute top-1/2 -translate-y-1/2 end-1.5 cursor-pointer"
                     >
-                      {item.icon}
-                      <span>{lang === 'fa' ? label.fa : label.en}</span>
+                      <X className="w-3.5 h-3.5" />
                     </button>
-                  );
-                })}
-              </nav>
+                  )}
+                </div>
+              </form>
+
+              {/* Live Drawer Quick Jump Results when typing OR Navigation Links */}
+              {drawerSearchQuery.trim() ? (
+                <div className="space-y-1.5">
+                  {navItems
+                    .filter((item) => {
+                      const label = CATEGORY_LABELS[item.id];
+                      const q = drawerSearchQuery.trim().toLowerCase();
+                      return (
+                        label.fa.toLowerCase().includes(q) ||
+                        label.en.toLowerCase().includes(q) ||
+                        label.descFa.toLowerCase().includes(q) ||
+                        label.descEn.toLowerCase().includes(q)
+                      );
+                    })
+                    .map((item) => {
+                      const label = CATEGORY_LABELS[item.id];
+                      return (
+                        <button
+                          key={`search_nav_${item.id}`}
+                          type="button"
+                          onClick={() => {
+                            setDrawerSearchQuery('');
+                            handleNavigate(item.id);
+                          }}
+                          className="w-full min-h-[48px] px-3.5 py-2.5 rounded-2xl bg-[var(--ft-surface-subtle)] hover:bg-[var(--ft-surface-hover)] flex items-center gap-3 text-start cursor-pointer transition-colors"
+                        >
+                          <span className="text-[var(--ft-accent)] shrink-0">{item.icon}</span>
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-[var(--ft-text-primary)] truncate">
+                              {lang === 'fa' ? label.fa : label.en}
+                            </div>
+                            <div className="text-[11px] text-[var(--ft-text-muted)] truncate">
+                              {lang === 'fa' ? label.descFa : label.descEn}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaletteInitialQuery(drawerSearchQuery);
+                      setMobileMenuOpen(false);
+                      setPaletteOpen(true);
+                    }}
+                    className="w-full min-h-[44px] px-3.5 py-2.5 rounded-2xl ft-accent-gradient text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Search className="w-3.5 h-3.5" />
+                    <span>{t(lang, 'جستجوی کامل معاملات و دستورات', 'Search All Trades & Commands')}</span>
+                  </button>
+                </div>
+              ) : (
+                <nav className="space-y-1">
+                  {navItems.map((item) => {
+                    const active = category === item.id;
+                    const label = CATEGORY_LABELS[item.id];
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => handleNavigate(item.id)}
+                        className={`w-full min-h-[48px] px-4 py-2.5 rounded-full flex items-center gap-3 text-sm font-medium cursor-pointer transition-colors ${
+                          active
+                            ? 'bg-[var(--ft-accent-soft)] text-[var(--ft-accent)] font-semibold'
+                            : 'text-[var(--ft-text-secondary)] hover:bg-[var(--ft-surface-hover)]'
+                        }`}
+                      >
+                        {item.icon}
+                        <span>{lang === 'fa' ? label.fa : label.en}</span>
+                      </button>
+                    );
+                  })}
+                </nav>
+              )}
+            </div>
+
+            {/* Compact Icon-Only Quick Tools Bar (No text labels) */}
+            <div className="pt-3 border-t border-[var(--ft-border)]">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setState((prev) => ({
+                      ...prev,
+                      settings: { ...prev.settings, privateMode: !prev.settings.privateMode },
+                    }))
+                  }
+                  title={
+                    state.settings.privateMode
+                      ? t(lang, 'حالت محرمانه فعال', 'Private Mode On')
+                      : t(lang, 'حالت محرمانه', 'Private Mode')
+                  }
+                  aria-label={t(lang, 'حالت محرمانه', 'Private Mode')}
+                  className={`h-11 flex-1 min-w-[44px] rounded-2xl border flex items-center justify-center cursor-pointer transition-colors ${
+                    state.settings.privateMode
+                      ? 'bg-[var(--ft-accent-soft)] border-[var(--ft-accent)] text-[var(--ft-accent)]'
+                      : 'bg-[var(--ft-surface-subtle)] border-[var(--ft-border)] text-[var(--ft-text-secondary)] hover:bg-[var(--ft-surface-hover)]'
+                  }`}
+                >
+                  {state.settings.privateMode ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setState((prev) => ({
+                      ...prev,
+                      settings: {
+                        ...prev.settings,
+                        theme: isLightTheme ? 'obsidian' : 'coral',
+                      },
+                    }))
+                  }
+                  title={isLightTheme ? t(lang, 'حالت تیره', 'Dark Mode') : t(lang, 'حالت روشن', 'Light Mode')}
+                  aria-label={isLightTheme ? t(lang, 'حالت تیره', 'Dark Mode') : t(lang, 'حالت روشن', 'Light Mode')}
+                  className="h-11 flex-1 min-w-[44px] rounded-2xl bg-[var(--ft-surface-subtle)] hover:bg-[var(--ft-surface-hover)] border border-[var(--ft-border)] flex items-center justify-center text-[var(--ft-text-secondary)] cursor-pointer transition-colors"
+                >
+                  {isLightTheme ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+                </button>
+
+                {state.settings.pinEnabled && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      setIsLocked(true);
+                    }}
+                    title={t(lang, 'قفل پنل', 'Lock Panel')}
+                    aria-label={t(lang, 'قفل پنل', 'Lock Panel')}
+                    className="h-11 flex-1 min-w-[44px] rounded-2xl bg-[var(--ft-surface-subtle)] hover:bg-[var(--ft-surface-hover)] border border-[var(--ft-border)] flex items-center justify-center text-[var(--ft-warning)] cursor-pointer transition-colors"
+                  >
+                    <Lock className="w-4 h-4" />
+                  </button>
+                )}
+
+                <PWAInstallButton
+                  lang={lang}
+                  variant="icon"
+                  onInstalledToast={(msg) => showToast(msg, 'success')}
+                />
+              </div>
             </div>
           </div>
           <div className="flex-1" onClick={() => setMobileMenuOpen(false)} />
@@ -2933,20 +3745,20 @@ export default function App() {
 
       {/* Main Content Workspace */}
       <div className="flex-1 flex flex-col min-w-0 relative z-10">
-        {/* 3-Zone Floating Capsule Top Header Bar (Uniform 44px / h-11 Baseline) */}
-        <header className="sticky top-0 z-30 px-4 sm:px-8 pt-4 pb-2 flex items-center justify-between gap-3 no-print">
-          {/* Zone 1: Brand Capsule */}
-          <div className="flex items-center gap-2 shrink-0">
+        {/* Clean Uncluttered Header (Mobile: Menu + Brand | Timeframe + Bell; Desktop: Full 3-Zone) */}
+        <header className="sticky top-0 z-30 px-3 sm:px-6 lg:px-8 pt-3 sm:pt-4 pb-2 flex items-center justify-between gap-2 sm:gap-3 no-print">
+          {/* Zone 1: Menu (Mobile) + Brand Capsule + Live Clock (Desktop) */}
+          <div className="flex items-center gap-2 shrink-0 min-w-0">
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
-              className="lg:hidden w-11 h-11 rounded-full glass-surface flex items-center justify-center text-[var(--ft-text-primary)] hover:bg-[var(--ft-surface-hover)] transition-colors cursor-pointer shrink-0"
+              className="lg:hidden w-10 h-10 rounded-full glass-surface flex items-center justify-center text-[var(--ft-text-primary)] hover:bg-[var(--ft-surface-hover)] transition-colors cursor-pointer shrink-0"
               aria-label="Open menu"
             >
               <Menu className="w-4 h-4" />
             </button>
-            <div className="h-11 ps-1.5 pe-4 rounded-full glass-surface flex items-center gap-2.5 shrink-0">
-              <span className="w-8 h-8 rounded-full ft-accent-gradient flex items-center justify-center shrink-0">
+            <div className="h-10 lg:h-11 ps-1.5 pe-3 lg:pe-4 rounded-full glass-surface flex items-center gap-2 lg:gap-2.5 shrink-0">
+              <span className="w-7 h-7 lg:w-8 lg:h-8 rounded-full ft-accent-gradient flex items-center justify-center shrink-0">
                 <svg
                   viewBox="0 0 24 24"
                   fill="none"
@@ -2961,13 +3773,16 @@ export default function App() {
                   <path d="M9 7h8v8" />
                 </svg>
               </span>
-              <span className="text-base font-bold tracking-tight text-[var(--ft-text-primary)] whitespace-nowrap">
+              <span className="text-sm lg:text-base font-bold tracking-tight text-[var(--ft-text-primary)] whitespace-nowrap">
                 FundTrack
               </span>
             </div>
+
+            {/* Live Weekday + Jalali/Gregorian Date + Clock (Desktop Only) */}
+            <DesktopLiveClock lang={lang} />
           </div>
 
-          {/* Zone 2: 5-Category Floating Pill Navigation Bar (Desktop) */}
+          {/* Zone 2: 6-Category Floating Pill Navigation Bar (Desktop Only) */}
           <nav
             className="hidden lg:flex items-center gap-1 h-11 p-[3px] rounded-full glass-surface"
             aria-label="Main Categories"
@@ -2980,7 +3795,7 @@ export default function App() {
                   key={item.id}
                   type="button"
                   onClick={() => handleNavigate(item.id)}
-                  className={`h-9 px-4 rounded-full text-xs flex items-center justify-center transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  className={`h-9 px-3.5 xl:px-4 rounded-full text-xs flex items-center justify-center transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                     active
                       ? 'bg-[var(--ft-text-primary)] text-[var(--ft-surface-solid)] font-semibold shadow-sm'
                       : 'font-medium text-[var(--ft-text-secondary)] hover:text-[var(--ft-text-primary)] hover:bg-[var(--ft-surface-hover)]'
@@ -2992,9 +3807,10 @@ export default function App() {
             })}
           </nav>
 
-          {/* Zone 3: Floating Utility Pill, Timeframe Selector & Quick Action (All h-11) */}
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="relative h-11 px-1.5 py-[3px] rounded-full flex items-center gap-1 shrink-0">
+          {/* Zone 3: Sleek Timeframe + Utility Pill + Desktop Quick Action */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Desktop Full Utility Pill */}
+            <div className="hidden lg:flex relative h-11 px-1.5 py-[3px] rounded-full items-center gap-1 shrink-0">
               <span
                 aria-hidden="true"
                 className="pointer-events-none absolute inset-0 -z-10 rounded-full glass-surface"
@@ -3065,6 +3881,9 @@ export default function App() {
                   }))
                 }
                 onNotificationAction={handleNotificationAction}
+                onUpdateSettings={(patch) =>
+                  setState((prev) => ({ ...prev, settings: { ...prev.settings, ...patch } }))
+                }
               />
 
               <button
@@ -3095,14 +3914,15 @@ export default function App() {
               </button>
             </div>
 
-            <div className="hidden sm:block shrink-0">
+            {/* Unified Compact Timeframe Selector (Mobile + Tablet + Desktop) */}
+            <div className="shrink-0">
               <GlassSelect<TimeRange>
                 size="sm"
                 align="end"
                 value={timeRange}
                 onChange={setTimeRange}
                 ariaLabel="Timeframe"
-                triggerClassName="h-11 !py-0 !px-4 !rounded-full glass-surface text-xs"
+                triggerClassName="h-10 lg:h-11 !py-0 !px-3 lg:!px-4 !rounded-full glass-surface text-xs"
                 options={[
                   { value: 'today', label: t(lang, 'امروز', 'Today') },
                   { value: 'week', label: t(lang, 'هفته', 'Week') },
@@ -3112,16 +3932,88 @@ export default function App() {
               />
             </div>
 
-            <PWAInstallButton
-              lang={lang}
-              variant="header"
-              onInstalledToast={(msg) => showToast(msg, 'success')}
-            />
+            {/* Minimal Mobile Notifications Pill */}
+            <div className="lg:hidden relative h-10 w-10 rounded-full flex items-center justify-center shrink-0">
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 -z-10 rounded-full glass-surface"
+              />
+              <HeaderNotificationDropdown
+                state={state}
+                compactCircle
+                onNavigate={handleNavigate}
+                onMarkRead={(id) =>
+                  setState((prev) => ({
+                    ...prev,
+                    notifications: prev.notifications.map((n) =>
+                      n.id === id ? { ...n, read: true } : n
+                    ),
+                    settings: {
+                      ...prev.settings,
+                      readAlertIds: Array.from(
+                        new Set([...(prev.settings.readAlertIds ?? []), id])
+                      ),
+                    },
+                  }))
+                }
+                onDeleteNotification={(id) =>
+                  setState((prev) => ({
+                    ...prev,
+                    notifications: prev.notifications.filter((n) => n.id !== id),
+                    settings: {
+                      ...prev.settings,
+                      dismissedAlertIds: Array.from(
+                        new Set([...(prev.settings.dismissedAlertIds ?? []), id])
+                      ),
+                    },
+                  }))
+                }
+                onMarkAllRead={(ids) =>
+                  setState((prev) => ({
+                    ...prev,
+                    notifications: prev.notifications.map((n) => ({ ...n, read: true })),
+                    settings: {
+                      ...prev.settings,
+                      readAlertIds: Array.from(
+                        new Set([...(prev.settings.readAlertIds ?? []), ...ids])
+                      ),
+                    },
+                  }))
+                }
+                onClearRead={(readIds) =>
+                  setState((prev) => ({
+                    ...prev,
+                    notifications: prev.notifications.filter((n) => !n.read),
+                    settings: {
+                      ...prev.settings,
+                      dismissedAlertIds: Array.from(
+                        new Set([...(prev.settings.dismissedAlertIds ?? []), ...readIds])
+                      ),
+                      readAlertIds: [],
+                    },
+                  }))
+                }
+                onNotificationAction={handleNotificationAction}
+                onUpdateSettings={(patch) =>
+                  setState((prev) => ({ ...prev, settings: { ...prev.settings, ...patch } }))
+                }
+              />
+            </div>
+
+            <div className="hidden lg:block shrink-0">
+              <PWAInstallButton
+                lang={lang}
+                variant="header"
+                onInstalledToast={(msg) => showToast(msg, 'success')}
+              />
+            </div>
 
             <button
               type="button"
               onClick={() => setQuickOpen(true)}
-              className="h-11 px-4 rounded-full ft-accent-gradient text-xs sm:text-sm font-semibold cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 hover:opacity-95 transition-opacity"
+              title={t(lang, 'ثبت سریع', 'Quick Action')}
+              aria-label={t(lang, 'ثبت سریع', 'Quick Action')}
+              className="hidden lg:flex h-11 px-4 rounded-full ft-accent-gradient text-sm font-semibold cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap shrink-0 hover:opacity-95 transition-opacity"
             >
               <Plus className="w-4 h-4" />
               <span>{t(lang, 'ثبت سریع', 'Quick Action')}</span>
@@ -3130,7 +4022,85 @@ export default function App() {
         </header>
 
         {/* Active View Content */}
-        <main className="flex-1 px-4 sm:px-8 pt-3 pb-8 max-w-[1440px] w-full mx-auto">
+        <main className="flex-1 px-3 sm:px-6 lg:px-8 pt-3 pb-28 lg:pb-8 max-w-[1440px] w-full mx-auto">
+          {/* Fresh Device / Mobile Real-Data Sync Onboarding Banner */}
+          {usingDemoFallback && !syncBannerDismissed && (
+            <section className="mb-4 glass-surface-high rounded-2xl p-4 border border-[var(--ft-accent)]/40 space-y-3 no-print">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1 min-w-0">
+                  <div className="text-xs sm:text-sm font-bold text-[var(--ft-text-primary)] flex flex-wrap items-center gap-2">
+                    <span className="px-2 py-0.5 rounded-full bg-[var(--ft-warning-soft)] text-[var(--ft-warning)] text-[11px] font-semibold">
+                      {t(lang, 'حالت دمو (اولین ورود در این دستگاه)', 'Demo Preview (Fresh Device)')}
+                    </span>
+                    {serverSyncInfo?.hasData && (
+                      <span className="text-[var(--ft-positive)] text-xs font-num">
+                        {t(lang, `نسخه واقعی آماده در سرور (Rev ${serverSyncInfo.revision})`, `Real snapshot available (Rev ${serverSyncInfo.revision})`)}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-[var(--ft-text-secondary)] leading-relaxed">
+                    {t(
+                      lang,
+                      'در این مرورگر هنوز دیتای واقعی ذخیره نشده است؛ می‌توانید با کلید همگام‌سازی دسکتاپ داده‌های واقعی خود را دریافت کنید، از گوگل درایو بازیابی نمایید، یا داده‌های دمو را پاک کنید.',
+                      'No local data saved on this device yet. Pair with your host key, restore from Google Drive, or clear demo records to start fresh.'
+                    )}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSyncBannerDismissed(true)}
+                  className="p-1.5 rounded-lg text-[var(--ft-text-muted)] hover:bg-[var(--ft-surface-hover)] cursor-pointer shrink-0"
+                  aria-label="Dismiss sync banner"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex-1 min-w-[190px] flex items-center gap-1.5">
+                  <div className="relative flex-1">
+                    <KeyRound className="w-3.5 h-3.5 text-[var(--ft-text-muted)] absolute top-1/2 -translate-y-1/2 start-3 pointer-events-none" />
+                    <input
+                      type="password"
+                      dir="ltr"
+                      value={pairingKeyInput}
+                      onChange={(e) => setPairingKeyInput(e.target.value)}
+                      placeholder={t(lang, 'کلید اتصال دسکتاپ (اختیاری روی میزبان)...', 'Host pairing key...')}
+                      className="w-full h-10 ps-8 pe-3 rounded-xl bg-[var(--ft-surface-subtle)] border border-[var(--ft-border-strong)] text-xs font-num text-[var(--ft-text-primary)] placeholder:text-[var(--ft-text-muted)] focus:outline-none focus:border-[var(--ft-accent)]"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    disabled={syncBusy}
+                    onClick={() => void handleConnectAndPullFromBanner()}
+                    className="h-10 px-3.5 rounded-xl ft-accent-gradient text-xs font-semibold cursor-pointer flex items-center gap-1.5 whitespace-nowrap disabled:opacity-60"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${syncBusy ? 'animate-spin' : ''}`} />
+                    <span>{t(lang, 'دریافت داده‌های واقعی', 'Sync Real Data')}</span>
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleNavigate('system', 'backup')}
+                  className="h-10 px-3 rounded-xl border border-[var(--ft-border-strong)] hover:bg-[var(--ft-surface-hover)] text-xs font-medium flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                >
+                  <Cloud className="w-3.5 h-3.5 text-[var(--ft-accent)]" />
+                  <span>{t(lang, 'گوگل درایو / بکاپ', 'Google Drive')}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleStartEmptyFromDemo}
+                  className="h-10 px-3 rounded-xl border border-[var(--ft-border-strong)] hover:bg-[var(--ft-danger-soft)] hover:text-[var(--ft-danger)] text-xs font-medium flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{t(lang, 'شروع خالی (حذف دمو)', 'Clear Demo')}</span>
+                </button>
+              </div>
+            </section>
+          )}
+
           {category === 'overview' && (
             <OverviewView
               state={state}
@@ -3204,6 +4174,7 @@ export default function App() {
               setSubTab={setTradingSub}
               range={timeRange}
               onInspectTrade={setInspectedTrade}
+              onUpdateTradeReview={handleSaveTradeReview}
               onSyncMt5={handleSyncMt5}
               onImportEventsJsonl={(txt) => handleImportEventsJsonl(txt, false)}
               onSyncLocalEaFile={(customPath) => handleSyncLocalEaFile(customPath, false)}
@@ -3320,6 +4291,44 @@ export default function App() {
         <OfflineIndicator lang={lang} />
       </div>
 
+      {/* Material Design 3 Bottom Navigation Bar for Mobile & Tablet (<= lg) */}
+      <nav
+        aria-label={t(lang, 'نوار ناوبری اصلی موبایل', 'Mobile Bottom Navigation')}
+        className="lg:hidden fixed bottom-0 inset-x-0 z-40 glass-surface-high border-t border-[var(--ft-border-strong)] px-2 sm:px-4 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex items-center justify-around gap-1 no-print"
+      >
+        {navItems
+          .filter((item) => item.id !== 'system')
+          .map((item) => {
+            const active = category === item.id;
+            const label = CATEGORY_LABELS[item.id];
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => handleNavigate(item.id)}
+                className={`flex-1 min-h-[52px] py-1 px-1 rounded-2xl flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer ${
+                  active
+                    ? 'text-[var(--ft-text-primary)] font-semibold'
+                    : 'text-[var(--ft-text-secondary)] hover:text-[var(--ft-text-primary)]'
+                }`}
+              >
+                <span
+                  className={`w-14 h-8 rounded-full flex items-center justify-center transition-all ${
+                    active
+                      ? 'bg-[var(--ft-accent-soft)] text-[var(--ft-accent)]'
+                      : 'bg-transparent'
+                  }`}
+                >
+                  {item.icon}
+                </span>
+                <span className="text-[11px] leading-none truncate max-w-[78px]">
+                  {lang === 'fa' ? label.fa : label.en}
+                </span>
+              </button>
+            );
+          })}
+      </nav>
+
       {/* Trade Review Slide-Over Drawer */}
       <TradeReviewDrawer
         trade={inspectedTrade}
@@ -3330,322 +4339,307 @@ export default function App() {
         onSaveReview={handleSaveTradeReview}
       />
 
-      {/* Global Quick Action Modal */}
-      {quickOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="glass-surface-high rounded-2xl p-6 w-full max-w-md space-y-5">
-            <div className="flex items-center justify-between pb-3 border-b border-[var(--ft-border)]">
-              <h3 className="text-base font-semibold text-[var(--ft-text-primary)]">
-                {t(lang, 'ثبت سریع و میانبرهای روزانه', 'Quick Action Hub')}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setQuickOpen(false)}
-                className="p-1.5 rounded-lg hover:bg-[var(--ft-surface-hover)] cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+      {/* Global Quick Action Modal / M3 Bottom Sheet */}
+      <ResponsiveModalSheet
+        open={quickOpen}
+        onClose={() => setQuickOpen(false)}
+        title={t(lang, 'ثبت سریع و میانبرهای روزانه', 'Quick Action Hub')}
+        subtitle={t(lang, 'ثبت فوری تراکنش مالی با منشاء پرداخت', 'Quick Log with Payment Origin')}
+        maxWidthClass="md:max-w-md"
+        asForm
+        onSubmit={(e) => {
+          e.preventDefault();
+          const amt = Number(qAmount);
+          if (!Number.isFinite(amt) || amt <= 0) {
+            showToast(t(lang, 'مبلغ معتبر وارد کنید', 'Enter a valid amount'), 'error');
+            return;
+          }
+          const effectiveMethod: PaymentMethod =
+            qType === 'in'
+              ? qCurrency === 'USD'
+                ? 'usd'
+                : 'bank'
+              : qPaymentMethod;
 
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                const amt = Number(qAmount);
-                if (!Number.isFinite(amt) || amt <= 0) {
-                  showToast(t(lang, 'مبلغ معتبر وارد کنید', 'Enter a valid amount'), 'error');
-                  return;
-                }
-                const effectiveMethod: PaymentMethod =
-                  qType === 'in'
-                    ? qCurrency === 'USD'
-                      ? 'usd'
-                      : 'bank'
-                    : qPaymentMethod;
-
-                if (effectiveMethod === 'credit') {
-                  const credId = qCreditLineId || state.creditLines?.[0]?.id;
-                  if (!credId) {
-                    showToast(t(lang, 'ابتدا یک خط اعتبار تعریف کنید', 'Define a credit line first'), 'error');
-                    return;
-                  }
-                  const cred = state.creditLines.find((c) => c.id === credId);
-                  handleAddOrUpdateTransaction({
-                    type: 'out',
-                    amount: amt,
-                    currency: cred?.currency ?? qCurrency,
-                    accountId: '',
-                    paymentMethod: 'credit',
-                    creditLineId: credId,
-                    installmentCount: Math.max(1, Number(qInstallments) || cred?.defaultInstallments || 4),
-                    categoryLabel: qCategoryLabel.trim() || undefined,
-                    date: new Date().toISOString(),
-                    note: qNote.trim() || `${cred?.title ?? 'خرید اقساطی'}`,
-                    source: 'manual',
-                  });
-                } else if (effectiveMethod === 'person_debt') {
-                  const pId = qPersonId || state.people?.[0]?.id;
-                  if (!pId) {
-                    showToast(t(lang, 'شخص مورد نظر را انتخاب کنید', 'Select a person'), 'error');
-                    return;
-                  }
-                  handleAddOrUpdateTransaction({
-                    type: 'out',
-                    amount: amt,
-                    currency: qCurrency,
-                    accountId: '',
-                    paymentMethod: 'person_debt',
-                    personId: pId,
-                    categoryLabel: qCategoryLabel.trim() || undefined,
-                    date: new Date().toISOString(),
-                    note: qNote.trim() || t(lang, 'هزینه از محل قرض', 'Borrowed expense'),
-                    source: 'manual',
-                  });
-                } else {
-                  const fallbackAcc =
-                    state.bankAccounts.find((a) => a.id === qAccountId) ??
-                    state.bankAccounts.find((a) => a.currency === qCurrency) ??
-                    state.bankAccounts[0];
-                  if (!fallbackAcc) return;
-                  handleAddOrUpdateTransaction({
-                    type: qType,
-                    amount: amt,
-                    currency: qCurrency,
-                    accountId: fallbackAcc.id,
-                    paymentMethod: effectiveMethod,
-                    categoryLabel: qType === 'out' ? qCategoryLabel.trim() || undefined : undefined,
-                    date: new Date().toISOString(),
-                    note: qNote.trim() || t(lang, 'ثبت سریع', 'Quick Entry'),
-                    source: 'manual',
-                  });
-                }
-                setQAmount('');
-                setQNote('');
+          if (effectiveMethod === 'credit') {
+            const credId = qCreditLineId || state.creditLines?.[0]?.id;
+            if (!credId) {
+              showToast(t(lang, 'ابتدا یک خط اعتبار تعریف کنید', 'Define a credit line first'), 'error');
+              return;
+            }
+            const cred = state.creditLines.find((c) => c.id === credId);
+            handleAddOrUpdateTransaction({
+              type: 'out',
+              amount: amt,
+              currency: cred?.currency ?? qCurrency,
+              accountId: '',
+              paymentMethod: 'credit',
+              creditLineId: credId,
+              installmentCount: Math.max(1, Number(qInstallments) || cred?.defaultInstallments || 4),
+              categoryLabel: qCategoryLabel.trim() || undefined,
+              date: new Date().toISOString(),
+              note: qNote.trim() || `${cred?.title ?? 'خرید اقساطی'}`,
+              source: 'manual',
+            });
+          } else if (effectiveMethod === 'person_debt') {
+            const pId = qPersonId || state.people?.[0]?.id;
+            if (!pId) {
+              showToast(t(lang, 'شخص مورد نظر را انتخاب کنید', 'Select a person'), 'error');
+              return;
+            }
+            handleAddOrUpdateTransaction({
+              type: 'out',
+              amount: amt,
+              currency: qCurrency,
+              accountId: '',
+              paymentMethod: 'person_debt',
+              personId: pId,
+              categoryLabel: qCategoryLabel.trim() || undefined,
+              date: new Date().toISOString(),
+              note: qNote.trim() || t(lang, 'هزینه از محل قرض', 'Borrowed expense'),
+              source: 'manual',
+            });
+          } else {
+            const fallbackAcc =
+              state.bankAccounts.find((a) => a.id === qAccountId) ??
+              state.bankAccounts.find((a) => a.currency === qCurrency) ??
+              state.bankAccounts[0];
+            if (!fallbackAcc) return;
+            handleAddOrUpdateTransaction({
+              type: qType,
+              amount: amt,
+              currency: qCurrency,
+              accountId: fallbackAcc.id,
+              paymentMethod: effectiveMethod,
+              categoryLabel: qType === 'out' ? qCategoryLabel.trim() || undefined : undefined,
+              date: new Date().toISOString(),
+              note: qNote.trim() || t(lang, 'ثبت سریع', 'Quick Entry'),
+              source: 'manual',
+            });
+          }
+          setQAmount('');
+          setQNote('');
+          setQuickOpen(false);
+        }}
+        footer={
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                handleRefreshFxRate(true);
                 setQuickOpen(false);
               }}
-              className="space-y-3"
+              className="min-h-[44px] px-3.5 py-2 text-xs font-medium rounded-xl border border-[var(--ft-border)] hover:bg-[var(--ft-surface-hover)] cursor-pointer shrink-0 flex items-center gap-1.5"
             >
-              <div className="text-xs font-medium text-[var(--ft-text-muted)]">
-                {t(lang, 'ثبت فوری تراکنش مالی با منشاء پرداخت', 'Quick Log with Payment Origin')}
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <GlassSelect<'out' | 'in'>
-                  size="sm"
-                  className="w-full"
-                  value={qType}
-                  onChange={(v) => {
-                    setQType(v);
-                    if (v === 'in' && (qPaymentMethod === 'credit' || qPaymentMethod === 'person_debt')) {
-                      setQPaymentMethod('bank');
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>{t(lang, 'نرخ دلار', 'USD Rate')}</span>
+            </button>
+            <button
+              type="submit"
+              className="min-h-[44px] flex-1 py-2.5 text-xs font-semibold rounded-xl bg-[var(--ft-accent)] text-[var(--ft-accent-fg)] cursor-pointer"
+            >
+              {t(lang, 'ثبت فوری تراکنش', 'Save Transaction')}
+            </button>
+          </div>
+        }
+      >
+        <div className="grid grid-cols-2 gap-2">
+          <GlassSelect<'out' | 'in'>
+            size="sm"
+            className="w-full"
+            value={qType}
+            onChange={(v) => {
+              setQType(v);
+              if (v === 'in' && (qPaymentMethod === 'credit' || qPaymentMethod === 'person_debt')) {
+                setQPaymentMethod('bank');
+              }
+            }}
+            options={[
+              { value: 'out', label: t(lang, 'هزینه / برداشت', 'Expense') },
+              { value: 'in', label: t(lang, 'واریز', 'Income') },
+            ]}
+          />
+          <GlassSelect<CurrencyCode>
+            size="sm"
+            className="w-full"
+            value={qCurrency}
+            onChange={(v) => {
+              setQCurrency(v);
+              if (v === 'USD' && qPaymentMethod === 'bank') setQPaymentMethod('usd');
+            }}
+            options={[
+              { value: 'IRT', label: 'IRT (تومان)' },
+              { value: 'USD', label: 'USD ($)' },
+            ]}
+          />
+        </div>
+
+        {qType === 'out' && (
+          <div className="space-y-2">
+            <label className="text-[11px] font-medium text-[var(--ft-text-muted)] block">
+              {t(lang, 'منشاء پرداخت هزینه', 'Payment Origin')}
+            </label>
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
+              {(
+                [
+                  ['bank', t(lang, 'بانکی', 'Bank')],
+                  ['cash', t(lang, 'نقدی', 'Cash')],
+                  ['usd', t(lang, 'دلاری', 'USD')],
+                  ['credit', t(lang, 'اعتباری', 'Credit')],
+                  ['person_debt', t(lang, 'قرض از فرد', 'Borrowed')],
+                ] as Array<[PaymentMethod, string]>
+              ).map(([pm, lb]) => (
+                <button
+                  key={pm}
+                  type="button"
+                  onClick={() => {
+                    setQPaymentMethod(pm);
+                    if (pm === 'usd') setQCurrency('USD');
+                    else if (pm === 'credit') {
+                      const cl = state.creditLines?.find((c) => c.id === qCreditLineId) ?? state.creditLines?.[0];
+                      if (cl) {
+                        setQCreditLineId(cl.id);
+                        setQCurrency(cl.currency);
+                        setQInstallments(String(cl.defaultInstallments));
+                      }
                     }
                   }}
-                  options={[
-                    { value: 'out', label: t(lang, 'هزینه / برداشت', 'Expense') },
-                    { value: 'in', label: t(lang, 'واریز', 'Income') },
-                  ]}
-                />
-                <GlassSelect<CurrencyCode>
-                  size="sm"
-                  className="w-full"
-                  value={qCurrency}
-                  onChange={(v) => {
-                    setQCurrency(v);
-                    if (v === 'USD' && qPaymentMethod === 'bank') setQPaymentMethod('usd');
-                  }}
-                  options={[
-                    { value: 'IRT', label: 'IRT (تومان)' },
-                    { value: 'USD', label: 'USD ($)' },
-                  ]}
-                />
-              </div>
-
-              {qType === 'out' && (
-                <div className="space-y-2">
-                  <label className="text-[11px] font-medium text-[var(--ft-text-muted)] block">
-                    {t(lang, 'منشاء پرداخت هزینه', 'Payment Origin')}
-                  </label>
-                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-1">
-                    {(
-                      [
-                        ['bank', t(lang, 'بانکی', 'Bank')],
-                        ['cash', t(lang, 'نقدی', 'Cash')],
-                        ['usd', t(lang, 'دلاری', 'USD')],
-                        ['credit', t(lang, 'اعتباری', 'Credit')],
-                        ['person_debt', t(lang, 'قرض از فرد', 'Borrowed')],
-                      ] as Array<[PaymentMethod, string]>
-                    ).map(([pm, lb]) => (
-                      <button
-                        key={pm}
-                        type="button"
-                        onClick={() => {
-                          setQPaymentMethod(pm);
-                          if (pm === 'usd') setQCurrency('USD');
-                          else if (pm === 'credit') {
-                            const cl = state.creditLines?.find((c) => c.id === qCreditLineId) ?? state.creditLines?.[0];
-                            if (cl) {
-                              setQCreditLineId(cl.id);
-                              setQCurrency(cl.currency);
-                              setQInstallments(String(cl.defaultInstallments));
-                            }
-                          }
-                        }}
-                        className={`py-1.5 px-1 text-[11px] font-medium rounded-lg border transition-colors cursor-pointer truncate ${
-                          qPaymentMethod === pm
-                            ? 'bg-[var(--ft-accent)] text-[var(--ft-accent-fg)] border-transparent font-semibold'
-                            : 'border-[var(--ft-border)] text-[var(--ft-text-secondary)] hover:bg-[var(--ft-surface-hover)]'
-                        }`}
-                      >
-                        {lb}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {(qType === 'in' || (qPaymentMethod !== 'credit' && qPaymentMethod !== 'person_debt')) && (
-                <GlassSelect
-                  size="sm"
-                  className="w-full"
-                  value={qAccountId}
-                  onChange={setQAccountId}
-                  options={state.bankAccounts.map((a) => ({
-                    value: a.id,
-                    label: `${a.name} (${a.currency})`,
-                    hint: formatMoney(a.balance, a.currency, lang, false, Boolean(state.settings.privateMode)),
-                  }))}
-                />
-              )}
-
-              {qType === 'out' && qPaymentMethod === 'credit' && (
-                <div className="grid grid-cols-3 gap-2 items-start">
-                  <div className="col-span-2">
-                    <GlassSelect
-                      size="sm"
-                      className="w-full"
-                      value={qCreditLineId}
-                      onChange={(id) => {
-                        setQCreditLineId(id);
-                        const cl = state.creditLines?.find((c) => c.id === id);
-                        if (cl) {
-                          setQCurrency(cl.currency);
-                          setQInstallments(String(cl.defaultInstallments));
-                        }
-                      }}
-                      options={(state.creditLines ?? []).map((c) => ({
-                        value: c.id,
-                        label: c.title,
-                        hint: `${c.defaultInstallments} ${t(lang, 'قسط', 'inst')}`,
-                      }))}
-                    />
-                  </div>
-                  <MaterialInput
-                    type="number"
-                    fieldSize="sm"
-                    ltrNum
-                    min={1}
-                    max={36}
-                    label={t(lang, 'اقساط', 'Inst.')}
-                    value={qInstallments}
-                    onChange={(e) => setQInstallments(e.target.value)}
-                  />
-                </div>
-              )}
-
-              {qType === 'out' && qPaymentMethod === 'person_debt' && (
-                <GlassSelect
-                  size="sm"
-                  className="w-full"
-                  value={qPersonId}
-                  onChange={setQPersonId}
-                  options={(state.people ?? []).map((p) => ({
-                    value: p.id,
-                    label: p.name,
-                  }))}
-                />
-              )}
-
-              <MaterialInput
-                label={t(lang, 'مبلغ', 'Amount')}
-                required
-                ltrNum
-                type="number"
-                step="any"
-                placeholder={qCurrency === 'IRT' ? '250000' : '50'}
-                value={qAmount}
-                onChange={(e) => setQAmount(e.target.value)}
-                error={
-                  qAmount !== '' && (!Number.isFinite(Number(qAmount)) || Number(qAmount) <= 0)
-                    ? t(lang, 'مبلغ باید بزرگ‌تر از صفر باشد', 'Amount must be greater than zero')
-                    : undefined
-                }
-                success={
-                  qAmount !== '' && Number(qAmount) > 0
-                    ? formatMoney(Number(qAmount), qCurrency, lang)
-                    : undefined
-                }
-              />
-
-              {qType === 'out' && (
-                <GlassSelect
-                  size="sm"
-                  className="w-full"
-                  value={qCategoryLabel}
-                  onChange={setQCategoryLabel}
-                  options={[
-                    { value: 'خوراک و کافه', label: t(lang, 'لیبل: خوراک و کافه', 'Label: Food & Cafe') },
-                    { value: 'خرید کالا', label: t(lang, 'لیبل: خرید کالا', 'Label: Shopping') },
-                    { value: 'مسکن و قبوض', label: t(lang, 'لیبل: مسکن و قبوض', 'Label: Housing & Bills') },
-                    { value: 'حمل‌ونقل', label: t(lang, 'لیبل: حمل‌ونقل', 'Label: Transport') },
-                    { value: 'ابزار و سرور', label: t(lang, 'لیبل: ابزار و سرور', 'Label: Tools & Server') },
-                    { value: 'درمان', label: t(lang, 'لیبل: درمان', 'Label: Health') },
-                    { value: 'سایر', label: t(lang, 'لیبل: سایر', 'Label: Other') },
-                  ]}
-                />
-              )}
-
-              <MaterialInput
-                label={t(lang, 'توضیح کوتاه', 'Short Note')}
-                type="text"
-                placeholder={t(lang, 'مثلاً قهوه، خرید هدفون، کرایه...', 'e.g. Coffee, Purchase...')}
-                value={qNote}
-                onChange={(e) => setQNote(e.target.value)}
-              />
-              <button
-                type="submit"
-                className="w-full py-2.5 text-xs font-semibold rounded-xl bg-[var(--ft-accent)] text-[var(--ft-accent-fg)] cursor-pointer"
-              >
-                {t(lang, 'ثبت فوری تراکنش', 'Save Transaction')}
-              </button>
-            </form>
-
-            <div className="pt-3 border-t border-[var(--ft-border)]">
-              <button
-                type="button"
-                onClick={() => {
-                  handleRefreshFxRate(true);
-                  setQuickOpen(false);
-                }}
-                className="w-full px-3 py-2 text-xs rounded-xl border border-[var(--ft-border)] hover:bg-[var(--ft-surface-hover)] cursor-pointer"
-              >
-                {t(lang, 'به‌روزرسانی نرخ دلار', 'Refresh USD Rate')}
-              </button>
+                  className={`min-h-[38px] py-1.5 px-1 text-[11px] font-medium rounded-lg border transition-colors cursor-pointer truncate ${
+                    qPaymentMethod === pm
+                      ? 'bg-[var(--ft-accent)] text-[var(--ft-accent-fg)] border-transparent font-semibold'
+                      : 'border-[var(--ft-border)] text-[var(--ft-text-secondary)] hover:bg-[var(--ft-surface-hover)]'
+                  }`}
+                >
+                  {lb}
+                </button>
+              ))}
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Confirmation Modal (Replaces window.confirm) */}
-      {confirmDialog && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="glass-surface-high rounded-2xl p-6 w-full max-w-sm space-y-4">
-            <h3 className="text-base font-semibold text-[var(--ft-text-primary)]">
-              {confirmDialog.title}
-            </h3>
-            <p className="text-xs text-[var(--ft-text-secondary)]">{confirmDialog.message}</p>
-            <div className="flex justify-end gap-2 pt-2">
+        {(qType === 'in' || (qPaymentMethod !== 'credit' && qPaymentMethod !== 'person_debt')) && (
+          <GlassSelect
+            size="sm"
+            className="w-full"
+            value={qAccountId}
+            onChange={setQAccountId}
+            options={state.bankAccounts.map((a) => ({
+              value: a.id,
+              label: `${a.name} (${a.currency})`,
+              hint: formatMoney(a.balance, a.currency, lang, false, Boolean(state.settings.privateMode)),
+            }))}
+          />
+        )}
+
+        {qType === 'out' && qPaymentMethod === 'credit' && (
+          <div className="grid grid-cols-3 gap-2 items-start">
+            <div className="col-span-2">
+              <GlassSelect
+                size="sm"
+                className="w-full"
+                value={qCreditLineId}
+                onChange={(id) => {
+                  setQCreditLineId(id);
+                  const cl = state.creditLines?.find((c) => c.id === id);
+                  if (cl) {
+                    setQCurrency(cl.currency);
+                    setQInstallments(String(cl.defaultInstallments));
+                  }
+                }}
+                options={(state.creditLines ?? []).map((c) => ({
+                  value: c.id,
+                  label: c.title,
+                  hint: `${c.defaultInstallments} ${t(lang, 'قسط', 'inst')}`,
+                }))}
+              />
+            </div>
+            <MaterialInput
+              type="number"
+              fieldSize="sm"
+              ltrNum
+              min={1}
+              max={36}
+              label={t(lang, 'اقساط', 'Inst.')}
+              value={qInstallments}
+              onChange={(e) => setQInstallments(e.target.value)}
+            />
+          </div>
+        )}
+
+        {qType === 'out' && qPaymentMethod === 'person_debt' && (
+          <GlassSelect
+            size="sm"
+            className="w-full"
+            value={qPersonId}
+            onChange={setQPersonId}
+            options={(state.people ?? []).map((p) => ({
+              value: p.id,
+              label: p.name,
+            }))}
+          />
+        )}
+
+        <MaterialInput
+          label={t(lang, 'مبلغ', 'Amount')}
+          required
+          ltrNum
+          type="number"
+          step="any"
+          placeholder={qCurrency === 'IRT' ? '250000' : '50'}
+          value={qAmount}
+          onChange={(e) => setQAmount(e.target.value)}
+          error={
+            qAmount !== '' && (!Number.isFinite(Number(qAmount)) || Number(qAmount) <= 0)
+              ? t(lang, 'مبلغ باید بزرگ‌تر از صفر باشد', 'Amount must be greater than zero')
+              : undefined
+          }
+          success={
+            qAmount !== '' && Number(qAmount) > 0
+              ? formatMoney(Number(qAmount), qCurrency, lang)
+              : undefined
+          }
+        />
+
+        {qType === 'out' && (
+          <GlassSelect
+            size="sm"
+            className="w-full"
+            value={qCategoryLabel}
+            onChange={setQCategoryLabel}
+            options={[
+              { value: 'خوراک و کافه', label: t(lang, 'لیبل: خوراک و کافه', 'Label: Food & Cafe') },
+              { value: 'خرید کالا', label: t(lang, 'لیبل: خرید کالا', 'Label: Shopping') },
+              { value: 'مسکن و قبوض', label: t(lang, 'لیبل: مسکن و قبوض', 'Label: Housing & Bills') },
+              { value: 'حمل‌ونقل', label: t(lang, 'لیبل: حمل‌ونقل', 'Label: Transport') },
+              { value: 'ابزار و سرور', label: t(lang, 'لیبل: ابزار و سرور', 'Label: Tools & Server') },
+              { value: 'درمان', label: t(lang, 'لیبل: درمان', 'Label: Health') },
+              { value: 'سایر', label: t(lang, 'لیبل: سایر', 'Label: Other') },
+            ]}
+          />
+        )}
+
+        <MaterialInput
+          label={t(lang, 'توضیح کوتاه', 'Short Note')}
+          type="text"
+          placeholder={t(lang, 'مثلاً قهوه، خرید هدفون، کرایه...', 'e.g. Coffee, Purchase...')}
+          value={qNote}
+          onChange={(e) => setQNote(e.target.value)}
+        />
+      </ResponsiveModalSheet>
+
+      {/* Confirmation Modal / Sheet (Replaces window.confirm) */}
+      <ResponsiveModalSheet
+        open={Boolean(confirmDialog)}
+        onClose={() => setConfirmDialog(null)}
+        title={confirmDialog?.title}
+        maxWidthClass="md:max-w-sm"
+        footer={
+          confirmDialog ? (
+            <div className="flex items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setConfirmDialog(null)}
-                className="px-4 py-2 text-xs rounded-xl border border-[var(--ft-border)] cursor-pointer"
+                className="min-h-[44px] px-4 py-2 text-xs font-medium rounded-xl border border-[var(--ft-border)] cursor-pointer"
               >
                 {t(lang, 'انصراف', 'Cancel')}
               </button>
@@ -3655,31 +4649,38 @@ export default function App() {
                   confirmDialog.onConfirm();
                   setConfirmDialog(null);
                 }}
-                className="px-4 py-2 text-xs font-semibold rounded-xl bg-[var(--ft-danger)] text-white cursor-pointer"
+                className="min-h-[44px] flex-1 sm:flex-none px-5 py-2 text-xs font-semibold rounded-xl bg-[var(--ft-danger)] text-white cursor-pointer"
               >
                 {t(lang, 'تایید و ادامه', 'Confirm')}
               </button>
             </div>
-          </div>
-        </div>
-      )}
+          ) : undefined
+        }
+      >
+        {confirmDialog && (
+          <p className="text-xs text-[var(--ft-text-secondary)] leading-relaxed">
+            {confirmDialog.message}
+          </p>
+        )}
+      </ResponsiveModalSheet>
 
-      {/* One-Time Live vs Demo Account Selection Modal (Shown Once on Account Creation) */}
-      {pendingMt5Prompt && (
-        <div className="fixed inset-0 z-[55] bg-black/65 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="glass-surface-high rounded-2xl p-6 w-full max-w-md space-y-4">
-            <div className="space-y-1">
-              <h3 className="text-base font-bold text-[var(--ft-text-primary)]">
-                {t(lang, 'تعیین نوع حساب جدید MT5 (فقط یک‌بار)', 'Classify New MT5 Account (One-Time)')}
-              </h3>
-              <p className="text-xs text-[var(--ft-text-secondary)] leading-relaxed">
-                {t(
-                  lang,
-                  `حساب جدید ${pendingMt5Prompt.broker} (#${pendingMt5Prompt.accountNumber}) اضافه شد. نوع این حساب را برای محاسبه در دارایی کل مشخص کنید:`,
-                  `New account ${pendingMt5Prompt.broker} (#${pendingMt5Prompt.accountNumber}) was added. Choose whether to include it in Net Worth:`
-                )}
-              </p>
-            </div>
+      {/* One-Time Live vs Demo Account Selection Modal / Sheet */}
+      <ResponsiveModalSheet
+        open={Boolean(pendingMt5Prompt)}
+        onClose={() => setPendingMt5Prompt(null)}
+        title={t(lang, 'تعیین نوع حساب جدید MT5 (فقط یک‌بار)', 'Classify New MT5 Account (One-Time)')}
+        maxWidthClass="md:max-w-md"
+        zIndexClass="z-[55]"
+      >
+        {pendingMt5Prompt && (
+          <>
+            <p className="text-xs text-[var(--ft-text-secondary)] leading-relaxed">
+              {t(
+                lang,
+                `حساب جدید ${pendingMt5Prompt.broker} (#${pendingMt5Prompt.accountNumber}) اضافه شد. نوع این حساب را برای محاسبه در دارایی کل مشخص کنید:`,
+                `New account ${pendingMt5Prompt.broker} (#${pendingMt5Prompt.accountNumber}) was added. Choose whether to include it in Net Worth:`
+              )}
+            </p>
 
             <div className="p-3.5 rounded-xl bg-[var(--ft-surface-subtle)] border border-[var(--ft-border)] flex items-center justify-between text-xs font-num">
               <span className="text-[var(--ft-text-muted)]">{pendingMt5Prompt.server}</span>
@@ -3704,7 +4705,7 @@ export default function App() {
                   );
                   setPendingMt5Prompt(null);
                 }}
-                className="p-3.5 rounded-xl text-start border border-[var(--ft-positive)]/60 bg-[var(--ft-positive)]/10 hover:bg-[var(--ft-positive)]/20 transition-colors cursor-pointer space-y-1"
+                className="min-h-[68px] p-3.5 rounded-xl text-start border border-[var(--ft-positive)]/60 bg-[var(--ft-positive)]/10 hover:bg-[var(--ft-positive)]/20 transition-colors cursor-pointer space-y-1"
               >
                 <div className="text-xs font-bold text-[var(--ft-positive)]">
                   {t(lang, 'حساب واقعی (Live)', 'Live Account')}
@@ -3729,7 +4730,7 @@ export default function App() {
                   );
                   setPendingMt5Prompt(null);
                 }}
-                className="p-3.5 rounded-xl text-start border border-[var(--ft-warning)]/60 bg-[var(--ft-warning)]/10 hover:bg-[var(--ft-warning)]/20 transition-colors cursor-pointer space-y-1"
+                className="min-h-[68px] p-3.5 rounded-xl text-start border border-[var(--ft-warning)]/60 bg-[var(--ft-warning)]/10 hover:bg-[var(--ft-warning)]/20 transition-colors cursor-pointer space-y-1"
               >
                 <div className="text-xs font-bold text-[var(--ft-warning)]">
                   {t(lang, 'حساب دمو / چالش (Demo)', 'Demo / Practice')}
@@ -3739,14 +4740,18 @@ export default function App() {
                 </div>
               </button>
             </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </ResponsiveModalSheet>
 
       {/* Global Ctrl+K Command Palette */}
       <CommandPaletteModal
         open={paletteOpen}
-        onClose={() => setPaletteOpen(false)}
+        initialQuery={paletteInitialQuery}
+        onClose={() => {
+          setPaletteOpen(false);
+          setPaletteInitialQuery('');
+        }}
         state={state}
         onNavigate={handleNavigate}
         onInspectTrade={setInspectedTrade}
@@ -3764,7 +4769,20 @@ export default function App() {
         }
       />
 
-      {/* Support-Style Floating Chat Assistant + FTB (Ctrl+J) */}
+      {/* Material Design 3 Mobile Quick Action FAB (z-[45] goes cleanly underneath Drawer blur z-[80]) */}
+      {!isLocked && (
+        <button
+          type="button"
+          onClick={() => setQuickOpen(true)}
+          title={t(lang, 'ثبت سریع تراکنش / هزینه', 'Quick Action')}
+          aria-label={t(lang, 'ثبت سریع', 'Quick Action')}
+          className="lg:hidden fixed bottom-22 end-3.5 z-[45] w-14 h-14 rounded-2xl ft-accent-gradient shadow-xl hover:scale-105 active:scale-95 transition-transform flex items-center justify-center cursor-pointer no-print"
+        >
+          <Plus className="w-6 h-6" />
+        </button>
+      )}
+
+      {/* Support-Style Floating Chat Assistant + Desktop FTB (Ctrl+J) */}
       {!isLocked && (
         <LocalAiCommandModal
           open={aiCommandOpen}

@@ -1,5 +1,6 @@
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import { execFile } from 'child_process';
+import crypto from 'crypto';
 import express from 'express';
 import fs from 'fs';
 import os from 'os';
@@ -7,6 +8,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { promisify } from 'util';
 import { createServer as createViteServer } from 'vite';
+import zlib from 'zlib';
 
 const execFileAsync = promisify(execFile);
 
@@ -88,9 +90,183 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: str
   }
 }
 
+const SYNC_DATA_DIR = path.join(__dirname, 'data');
+const SYNC_DB_FILE = path.join(SYNC_DATA_DIR, 'fundtrack-lan-db.json');
+const SYNC_KEY_FILE = path.join(SYNC_DATA_DIR, '.lan-sync-key');
+
+interface LanStoredRecord {
+  revision: number;
+  updatedAt: string;
+  encrypted: boolean;
+  payload: unknown;
+}
+
+function ensureSyncDataDir() {
+  if (!fs.existsSync(SYNC_DATA_DIR)) {
+    fs.mkdirSync(SYNC_DATA_DIR, { recursive: true });
+  }
+}
+
+function getOrCreateLanSyncKey(): string {
+  ensureSyncDataDir();
+  if (fs.existsSync(SYNC_KEY_FILE)) {
+    const existing = fs.readFileSync(SYNC_KEY_FILE, 'utf8').trim();
+    if (existing.length >= 16) return existing;
+  }
+  const fresh = crypto.randomBytes(16).toString('hex');
+  fs.writeFileSync(SYNC_KEY_FILE, fresh, { encoding: 'utf8', mode: 0o600 });
+  return fresh;
+}
+
+function isValidSyncKey(provided: unknown): boolean {
+  if (typeof provided !== 'string') return false;
+  const candidate = provided.trim();
+  if (!candidate) return false;
+  const expected = getOrCreateLanSyncKey();
+  const bufA = Buffer.from(candidate, 'utf8');
+  const bufB = Buffer.from(expected, 'utf8');
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+function isLoopbackIp(req: express.Request): boolean {
+  const remote = req.socket?.remoteAddress || req.ip || '';
+  return (
+    remote === '127.0.0.1' ||
+    remote === '::1' ||
+    remote === '::ffff:127.0.0.1' ||
+    remote.startsWith('127.')
+  );
+}
+
+function getLanUrls(port: number): string[] {
+  const nets = os.networkInterfaces();
+  const urls: string[] = [];
+  for (const entries of Object.values(nets)) {
+    if (!entries) continue;
+    for (const net of entries) {
+      if (net.family === 'IPv4' && !net.internal) {
+        urls.push(`http://${net.address}:${port}`);
+      }
+    }
+  }
+  return Array.from(new Set(urls));
+}
+
+function readLanStoredRecord(): LanStoredRecord | null {
+  try {
+    if (!fs.existsSync(SYNC_DB_FILE)) return null;
+    const parsed = JSON.parse(fs.readFileSync(SYNC_DB_FILE, 'utf8')) as Partial<LanStoredRecord>;
+    if (!parsed || typeof parsed !== 'object' || parsed.payload === undefined) return null;
+    return {
+      revision: Number(parsed.revision) || 1,
+      updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString(),
+      encrypted: Boolean(parsed.encrypted),
+      payload: parsed.payload,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeLanStoredRecord(record: LanStoredRecord) {
+  ensureSyncDataDir();
+  const tmpFile = `${SYNC_DB_FILE}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmpFile, JSON.stringify(record, null, 2), { encoding: 'utf8', mode: 0o600 });
+  fs.renameSync(tmpFile, SYNC_DB_FILE);
+}
+
+function createTarGzArchive(files: Array<{ name: string; content: Buffer; mode?: number }>): Buffer {
+  const blocks: Buffer[] = [];
+  for (const entry of files) {
+    const cleanName = entry.name.replace(/^\/+/, '');
+    const header = Buffer.alloc(512, 0);
+    // Split prefix/name if >100 chars
+    let nameField = cleanName;
+    let prefixField = '';
+    if (Buffer.byteLength(cleanName, 'utf8') > 100) {
+      const idx = cleanName.lastIndexOf('/');
+      if (idx > 0) {
+        prefixField = cleanName.slice(0, idx);
+        nameField = cleanName.slice(idx + 1);
+      }
+    }
+    header.write(nameField.slice(0, 100), 0, 100, 'utf8');
+    header.write((entry.mode ?? 0o644).toString(8).padStart(7, '0') + '\0', 100, 8, 'ascii');
+    header.write('0000000\0', 108, 8, 'ascii');
+    header.write('0000000\0', 116, 8, 'ascii');
+    header.write(entry.content.length.toString(8).padStart(11, '0') + '\0', 124, 12, 'ascii');
+    header.write(Math.floor(Date.now() / 1000).toString(8).padStart(11, '0') + '\0', 136, 12, 'ascii');
+    header.fill(' ', 148, 156, 'ascii');
+    header.write('0', 156, 1, 'ascii');
+    header.write('ustar\0', 257, 6, 'ascii');
+    header.write('00', 263, 2, 'ascii');
+    if (prefixField) {
+      header.write(prefixField.slice(0, 155), 345, 155, 'utf8');
+    }
+
+    let sum = 0;
+    for (let i = 0; i < 512; i += 1) {
+      sum += header[i];
+    }
+    header.write(sum.toString(8).padStart(6, '0') + '\0 ', 148, 8, 'ascii');
+    blocks.push(header);
+
+    if (entry.content.length > 0) {
+      blocks.push(entry.content);
+      const rem = entry.content.length % 512;
+      if (rem !== 0) {
+        blocks.push(Buffer.alloc(512 - rem, 0));
+      }
+    }
+  }
+  blocks.push(Buffer.alloc(1024, 0));
+  return zlib.gzipSync(Buffer.concat(blocks));
+}
+
+function collectFilesRecursive(dirPath: string, prefix: string): Array<{ name: string; content: Buffer; mode?: number }> {
+  const out: Array<{ name: string; content: Buffer; mode?: number }> = [];
+  if (!fs.existsSync(dirPath)) return out;
+  const items = fs.readdirSync(dirPath, { withFileTypes: true });
+  for (const item of items) {
+    if (item.name === '.gradle' || item.name === 'build') continue;
+    const full = path.join(dirPath, item.name);
+    const rel = `${prefix}/${item.name}`;
+    if (item.isDirectory()) {
+      out.push(...collectFilesRecursive(full, rel));
+    } else if (item.isFile()) {
+      const stat = fs.statSync(full);
+      out.push({
+        name: rel,
+        content: fs.readFileSync(full),
+        mode: item.name.endsWith('.sh') ? 0o755 : stat.mode & 0o777,
+      });
+    }
+  }
+  return out;
+}
+
 async function startServer() {
   const app = express();
-  app.use(express.json({ limit: '5mb' }));
+  app.use(express.json({ limit: '15mb' }));
+
+  app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    if (req.path.startsWith('/api/sync') || req.path === '/api/health') {
+      const origin = req.headers.origin;
+      if (origin) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+      }
+      res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-FundTrack-Sync-Key');
+      if (req.method === 'OPTIONS') {
+        return res.status(204).end();
+      }
+    }
+    return next();
+  });
 
   app.get('/api/health', (_req, res) => {
     res.json({
@@ -951,6 +1127,136 @@ async function startServer() {
 
   app.post('/api/export-singlefile', async (req, res) => {
     await serveSingleFileHtml(req.body?.state ?? null, res);
+  });
+
+  // --- Hybrid LAN Local Sync Database (Protected with Timing-Safe Sync Key) ---
+  app.get('/api/sync/info', (_req, res) => {
+    const existing = readLanStoredRecord();
+    res.json({
+      ok: true,
+      port: PORT,
+      lanUrls: getLanUrls(PORT),
+      hasData: Boolean(existing),
+      revision: existing?.revision ?? 0,
+      updatedAt: existing?.updatedAt ?? null,
+      encrypted: existing?.encrypted ?? false,
+      requiresKey: true,
+    });
+  });
+
+  app.get('/api/sync/host-key', (req, res) => {
+    const existing = readLanStoredRecord();
+    if (!isLoopbackIp(req) && existing) {
+      return res.status(403).json({
+        ok: false,
+        error: 'Host pairing key can only be read directly from the host machine (localhost) once data exists.',
+      });
+    }
+    return res.json({
+      ok: true,
+      syncKey: getOrCreateLanSyncKey(),
+    });
+  });
+
+  app.post('/api/sync/rotate-key', (req, res) => {
+    const provided = req.header('X-FundTrack-Sync-Key');
+    if (!isLoopbackIp(req) && !isValidSyncKey(provided)) {
+      return res.status(403).json({ ok: false, error: 'Unauthorized key rotation' });
+    }
+    ensureSyncDataDir();
+    const fresh = crypto.randomBytes(16).toString('hex');
+    fs.writeFileSync(SYNC_KEY_FILE, fresh, { encoding: 'utf8', mode: 0o600 });
+    return res.json({ ok: true, syncKey: fresh });
+  });
+
+  app.get('/api/sync/state', (req, res) => {
+    const provided = req.header('X-FundTrack-Sync-Key');
+    if (!isValidSyncKey(provided)) {
+      return res.status(401).json({ ok: false, error: 'INVALID_SYNC_KEY' });
+    }
+    const existing = readLanStoredRecord();
+    if (!existing) {
+      return res.status(404).json({ ok: false, error: 'NO_LAN_DATA_YET' });
+    }
+    return res.json({
+      ok: true,
+      revision: existing.revision,
+      updatedAt: existing.updatedAt,
+      encrypted: existing.encrypted,
+      payload: existing.payload,
+    });
+  });
+
+  app.post('/api/sync/state', (req, res) => {
+    const provided = req.header('X-FundTrack-Sync-Key');
+    if (!isValidSyncKey(provided)) {
+      return res.status(401).json({ ok: false, error: 'INVALID_SYNC_KEY' });
+    }
+    const body = req.body as {
+      revision?: number;
+      updatedAt?: string;
+      encrypted?: boolean;
+      payload?: unknown;
+    };
+    if (!body || typeof body !== 'object' || !body.payload || typeof body.payload !== 'object') {
+      return res.status(400).json({ ok: false, error: 'INVALID_SYNC_PAYLOAD' });
+    }
+    const prev = readLanStoredRecord();
+    const nextRevision = Math.max((prev?.revision ?? 0) + 1, Number(body.revision) || 1);
+    const updatedAt =
+      typeof body.updatedAt === 'string' && body.updatedAt ? body.updatedAt : new Date().toISOString();
+    const record: LanStoredRecord = {
+      revision: nextRevision,
+      updatedAt,
+      encrypted: Boolean(body.encrypted),
+      payload: body.payload,
+    };
+    writeLanStoredRecord(record);
+    return res.json({
+      ok: true,
+      revision: record.revision,
+      updatedAt: record.updatedAt,
+      encrypted: record.encrypted,
+    });
+  });
+
+  // --- Export Standalone Android Studio Kotlin Project (.tar.gz) ---
+  app.get('/api/export-android-project', (req, res) => {
+    try {
+      const androidDir = path.join(__dirname, 'android-app');
+      if (!fs.existsSync(androidDir)) {
+        return res.status(404).json({ ok: false, error: 'Android project template not found' });
+      }
+      const files = collectFilesRecursive(androidDir, 'FundTrack-Android');
+      const lanQuery = typeof req.query.lanUrl === 'string' ? req.query.lanUrl.trim() : '';
+      const detectedUrl = getLanUrls(PORT)[0] || `http://192.168.1.100:${PORT}`;
+      const targetServerUrl = /^https?:\/\//i.test(lanQuery) ? lanQuery : detectedUrl;
+
+      const safeUrl = targetServerUrl
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+      const patchedFiles = files.map((f) => {
+        if (f.name.endsWith('/strings.xml')) {
+          const updatedXml = f.content
+            .toString('utf8')
+            .replace(
+              /<string name="default_server_url">[^<]*<\/string>/,
+              `<string name="default_server_url">${safeUrl}</string>`
+            );
+          return { ...f, content: Buffer.from(updatedXml, 'utf8') };
+        }
+        return f;
+      });
+
+      const archive = createTarGzArchive(patchedFiles);
+      res.setHeader('Content-Type', 'application/gzip');
+      res.setHeader('Content-Disposition', 'attachment; filename="FundTrack-Android-App.tar.gz"');
+      return res.send(archive);
+    } catch (err) {
+      return res.status(500).json({ ok: false, error: (err as Error).message });
+    }
   });
 
   if (process.env.NODE_ENV !== 'production') {

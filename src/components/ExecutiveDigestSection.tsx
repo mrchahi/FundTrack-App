@@ -36,29 +36,29 @@ export const ExecutiveDigestSection: React.FC<ExecutiveDigestSectionProps> = ({ 
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex items-center gap-1 p-1 rounded-xl glass-surface">
+        <div className="flex flex-wrap items-center gap-2 max-w-full">
+          <div className="inline-flex items-center gap-1 p-1 rounded-2xl glass-surface overflow-x-auto no-scrollbar max-w-full flex-nowrap">
             <button
               type="button"
               onClick={() => setPeriod('week')}
-              className={`px-3.5 py-1.5 text-xs font-medium rounded-lg cursor-pointer ${
+              className={`min-h-[34px] px-3.5 py-1 text-xs font-medium rounded-xl cursor-pointer whitespace-nowrap shrink-0 ${
                 period === 'week'
                   ? 'ft-accent-gradient font-semibold'
                   : 'text-[var(--ft-text-secondary)]'
               }`}
             >
-              {t(lang, '۷ روز اخیر', 'Weekly (7d)')}
+              {t(lang, 'هفتگی', 'Weekly')}
             </button>
             <button
               type="button"
               onClick={() => setPeriod('month')}
-              className={`px-3.5 py-1.5 text-xs font-medium rounded-lg cursor-pointer ${
+              className={`min-h-[34px] px-3.5 py-1 text-xs font-medium rounded-xl cursor-pointer whitespace-nowrap shrink-0 ${
                 period === 'month'
                   ? 'ft-accent-gradient font-semibold'
                   : 'text-[var(--ft-text-secondary)]'
               }`}
             >
-              {t(lang, '۳۰ روز اخیر', 'Monthly (30d)')}
+              {t(lang, 'ماهانه', 'Monthly')}
             </button>
           </div>
 

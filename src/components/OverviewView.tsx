@@ -8,6 +8,8 @@ import {
   Check,
   CheckCheck,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Flame,
   Landmark,
   Shield,
@@ -98,6 +100,10 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
 
   const [activityFilter, setActivityFilter] = useState<'all' | 'trades' | 'finance'>('all');
   const [obligationsMode, setObligationsMode] = useState<'table' | 'calendar'>('table');
+  const [showMobileAccounts, setShowMobileAccounts] = useState(false);
+  const [showMobileChart, setShowMobileChart] = useState(false);
+  const [showAllMobileActivities, setShowAllMobileActivities] = useState(false);
+  const [showAllMobileObligations, setShowAllMobileObligations] = useState(false);
   const todayJalali = useMemo(() => toJalali(new Date()), []);
   const [selectedCalDay, setSelectedCalDay] = useState<number>(() => toJalali(new Date()).jd);
 
@@ -281,14 +287,14 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
       : 0;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3.5 sm:space-y-5">
       {/* Greeting + Sub-tab & Player HUD Strip */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold text-[var(--ft-text-primary)]">
+          <h2 className="text-lg sm:text-2xl font-bold text-[var(--ft-text-primary)]">
             {t(lang, 'نمای کلی', 'Overview')}
           </h2>
-          <p className="text-xs text-[var(--ft-text-muted)] mt-0.5">
+          <p className="text-[11px] sm:text-xs text-[var(--ft-text-muted)] mt-0.5 truncate">
             {t(
               lang,
               `سطح ${game.currentRank.level} (${game.currentRank.titleFa}) · زنجیره ${state.gamification.streakDays} روزه · ضریب ${game.disciplineMultiplier}x XP`,
@@ -297,12 +303,12 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="inline-flex items-center gap-1 p-1 rounded-xl glass-surface">
+        <div className="flex flex-wrap items-center gap-2.5 max-w-full">
+          <div className="inline-flex items-center gap-1 p-1 rounded-2xl glass-surface overflow-x-auto no-scrollbar max-w-full flex-nowrap">
             <button
               type="button"
               onClick={() => setSubTab('pulse')}
-              className={`px-3.5 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+              className={`min-h-[36px] px-3.5 py-1.5 text-xs font-medium rounded-xl transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                 subTab === 'pulse'
                   ? 'ft-accent-gradient font-semibold'
                   : 'text-[var(--ft-text-secondary)] hover:text-[var(--ft-text-primary)]'
@@ -313,7 +319,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             <button
               type="button"
               onClick={() => setSubTab('actions')}
-              className={`px-3.5 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-1.5 ${
+              className={`min-h-[36px] px-3.5 py-1.5 text-xs font-medium rounded-xl transition-colors whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-1.5 ${
                 subTab === 'actions'
                   ? 'ft-accent-gradient font-semibold'
                   : 'text-[var(--ft-text-secondary)] hover:text-[var(--ft-text-primary)]'
@@ -321,7 +327,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             >
               <span>{t(lang, 'اقدام‌ها', 'Actions')}</span>
               {unreadAlertsCount > 0 && (
-                <span className="font-num text-[11px] px-1.5 py-0.5 rounded bg-black/20">
+                <span className="font-num text-[11px] px-1.5 py-0.5 rounded-full bg-black/20">
                   {unreadAlertsCount}
                 </span>
               )}
@@ -329,7 +335,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             <button
               type="button"
               onClick={() => setSubTab('digest')}
-              className={`px-3.5 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+              className={`min-h-[36px] px-3.5 py-1.5 text-xs font-medium rounded-xl transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                 subTab === 'digest'
                   ? 'ft-accent-gradient font-semibold'
                   : 'text-[var(--ft-text-secondary)] hover:text-[var(--ft-text-primary)]'
@@ -356,7 +362,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
       ) : subTab === 'pulse' ? (
         <>
           {/* TOP BENTO ROW (3-Column Balanced Executive Grid) */}
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-stretch">
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-3.5 sm:gap-5 items-stretch">
             {/* Column 1: Consolidated Net Worth + Strictly Separated Liquidity */}
             {(() => {
               const grossAssetsIrt = Math.max(0, finance.totalBankIrt + finance.totalTradingIrt);
@@ -549,10 +555,25 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                     </div>
                   </div>
 
-                  {/* 3. Compact Interactive Accounts Strip */}
-                  <div className="relative z-10 space-y-1.5 pt-3 border-t border-[var(--ft-border)]">
-                    <div className="flex items-center justify-between text-xs px-0.5 mb-1">
-                      <span className="font-semibold text-[var(--ft-text-secondary)]">
+                  {/* 3. Compact Interactive Accounts Strip (Collapsible on mobile to minimize scrolling) */}
+                  <div className="relative z-10 space-y-1.5 pt-2.5 sm:pt-3 border-t border-[var(--ft-border)]">
+                    <div className="flex items-center justify-between text-xs px-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setShowMobileAccounts((v) => !v)}
+                        className="sm:hidden flex items-center gap-1 font-semibold text-[var(--ft-text-secondary)] cursor-pointer"
+                      >
+                        <span>
+                          {t(lang, 'حساب‌ها', 'Accounts')} (
+                          {state.bankAccounts.length + state.mt5Accounts.filter((a) => !a.isDemo).length})
+                        </span>
+                        {showMobileAccounts ? (
+                          <ChevronUp className="w-3.5 h-3.5" />
+                        ) : (
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                      <span className="hidden sm:inline font-semibold text-[var(--ft-text-secondary)]">
                         {t(lang, 'حساب‌ها', 'Accounts')}
                       </span>
                       <button
@@ -567,6 +588,8 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                         <ArrowUpRight className="w-3.5 h-3.5" />
                       </button>
                     </div>
+
+                    <div className={`${showMobileAccounts ? 'space-y-1.5 pt-1' : 'hidden sm:block sm:space-y-1.5 sm:pt-1'}`}>
 
                     {state.bankAccounts.slice(0, 2).map((acc) => {
                       const accIrt = convertCurrency(acc.balance, acc.currency, 'IRT', usdToman);
@@ -629,6 +652,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                         </button>
                       );
                     })()}
+                    </div>
                   </div>
                 </section>
               );
@@ -868,16 +892,30 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                           : t(lang, `سود و زیان روزانه نسبت به خط سر‌به‌سر (${rangeLabel})`, `Daily P&L vs break-even (${rangeLabel})`)}
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => onNavigate('trading', 'analytics')}
-                      className="text-xs font-medium text-[var(--ft-accent)] hover:underline cursor-pointer shrink-0 whitespace-nowrap"
-                    >
-                      {t(lang, 'آنالیز', 'Analytics')}
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setShowMobileChart((v) => !v)}
+                        className="sm:hidden px-2.5 py-1 rounded-full bg-[var(--ft-surface-subtle)] border border-[var(--ft-border)] text-[11px] font-medium text-[var(--ft-text-secondary)] flex items-center gap-1 cursor-pointer"
+                      >
+                        <span>{showMobileChart ? t(lang, 'بستن نمودار', 'Hide') : t(lang, 'نمودار', 'Chart')}</span>
+                        {showMobileChart ? (
+                          <ChevronUp className="w-3 h-3" />
+                        ) : (
+                          <ChevronDown className="w-3 h-3" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onNavigate('trading', 'analytics')}
+                        className="text-xs font-medium text-[var(--ft-accent)] hover:underline cursor-pointer whitespace-nowrap"
+                      >
+                        {t(lang, 'آنالیز', 'Analytics')}
+                      </button>
+                    </div>
                   </div>
 
-                  <div>
+                  <div className={showMobileChart ? 'block' : 'hidden sm:block'}>
                     <SingleSymbolPerformanceChart
                       points={periodPerformancePoints}
                       height={176}
@@ -961,14 +999,14 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           </div>
 
           {/* BOTTOM BENTO ROW: Left (Spending Limit + Goal & Streak Cards) & Right (Activities Table) */}
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-stretch">
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-3.5 sm:gap-5 items-stretch">
             {/* Left Column (4 cols) */}
-            <div className="xl:col-span-4 flex flex-col gap-5">
+            <div className="xl:col-span-4 flex flex-col gap-3.5 sm:gap-5">
               {/* Monthly Spending Limit Bar (Pure IRT liquidity vs IRT spend) */}
-              <section className="glass-surface rounded-3xl p-5 space-y-3">
+              <section className="glass-surface rounded-3xl p-4 sm:p-5 space-y-2.5 sm:space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="text-sm font-semibold text-[var(--ft-text-primary)]">
-                    {t(lang, 'مخارج این ماه (ریالی)', 'Monthly Spend (IRT)')}
+                    {t(lang, 'مخارج ماه', 'Monthly Spend')}
                   </h3>
                   <span className="font-num text-xs font-semibold text-[var(--ft-accent)] whitespace-nowrap">
                     {spendingLimitPct}%
@@ -977,7 +1015,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                 <StripedProgressBar
                   valuePct={spendingLimitPct}
                   tone={spendingLimitPct > 85 ? 'danger' : spendingLimitPct > 65 ? 'warning' : 'accent'}
-                  heightClass="h-6"
+                  heightClass="h-5 sm:h-6"
                 />
                 <div className="flex items-center justify-between text-xs font-num text-[var(--ft-text-muted)]">
                   <span>
@@ -988,15 +1026,15 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                 </div>
                 {finance.monthlyOutUsdOnly > 0 && (
                   <div className="text-[11px] font-num text-[var(--ft-accent)] pt-1 border-t border-[var(--ft-border)] flex items-center justify-between">
-                    <span>{t(lang, 'مخارج دلاری این ماه:', 'Monthly USD Spend:')}</span>
+                    <span>{t(lang, 'مخارج دلاری:', 'USD Spend:')}</span>
                     <span>{formatMoney(finance.monthlyOutUsdOnly, 'USD', lang, false, isPrivate)}</span>
                   </div>
                 )}
               </section>
 
-              {/* Visual Goal & Streak Cards (Strictly Goals & Discipline — zero unrelated news alerts) */}
-              <section className="glass-surface rounded-3xl p-5 flex flex-col justify-between gap-4 flex-1">
-                <div className="space-y-4">
+              {/* Visual Goal & Streak Cards */}
+              <section className="glass-surface rounded-3xl p-4 sm:p-5 flex flex-col justify-between gap-3 sm:gap-4 flex-1">
+                <div className="space-y-3 sm:space-y-4">
                   <div className="flex items-center justify-between gap-2">
                     <h3 className="text-sm font-semibold text-[var(--ft-text-primary)]">
                       {t(lang, 'اهداف و استریک', 'Goals & Streaks')}
@@ -1006,7 +1044,9 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                       onClick={() => onNavigate('growth', 'goals')}
                       className="px-2.5 py-1 text-xs rounded-lg border border-[var(--ft-border-strong)] hover:bg-[var(--ft-surface-hover)] cursor-pointer whitespace-nowrap shrink-0"
                     >
-                      + {t(lang, 'اهداف', 'Goals')}
+                      {activeGoals.length > 1
+                        ? `${t(lang, 'همه', 'All')} (${activeGoals.length})`
+                        : `+ ${t(lang, 'اهداف', 'Goals')}`}
                     </button>
                   </div>
 
@@ -1047,8 +1087,8 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                             key={goal.id}
                             type="button"
                             onClick={() => onNavigate('growth', 'goals')}
-                            className={`p-4 rounded-2xl text-start transition-transform hover:-translate-y-0.5 cursor-pointer space-y-2.5 ${
-                              isPrimary ? 'ft-accent-gradient shadow-sm' : 'glass-tile'
+                            className={`p-3.5 sm:p-4 rounded-2xl text-start transition-transform hover:-translate-y-0.5 cursor-pointer space-y-2 ${
+                              isPrimary ? 'ft-accent-gradient shadow-sm' : 'glass-tile hidden sm:block'
                             }`}
                           >
                             <div className="flex items-center justify-between text-xs opacity-90">
@@ -1059,7 +1099,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                             </div>
                             <div className="text-sm font-bold truncate">{goal.title}</div>
                             <div
-                              className={`h-3 rounded-full overflow-hidden ${
+                              className={`h-2.5 sm:h-3 rounded-full overflow-hidden ${
                                 isPrimary ? 'bg-white/25' : 'bg-[var(--ft-surface-subtle)]'
                               }`}
                             >
@@ -1073,7 +1113,11 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                             </div>
                             <div className="flex items-center justify-between text-[11px] font-num opacity-85">
                               <span>{formatMoney(goal.savedAmount, goal.currency, lang, true, isPrivate)}</span>
-                              <span>{formatJalaliDate(plan.projectedDate, lang)}</span>
+                              <span>
+                                {goal.deadlineMode === 'open_until_funded'
+                                  ? t(lang, 'باز تا تأمین بودجه', 'Open Until Funded')
+                                  : formatJalaliDate(goal.targetDate, lang)}
+                              </span>
                             </div>
                           </button>
                         );
@@ -1123,9 +1167,9 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
             </div>
 
             {/* Right Column (8 cols): Recent Activities Visual Table */}
-            <section className="xl:col-span-8 glass-surface rounded-3xl p-5 flex flex-col justify-between gap-4">
+            <section className="xl:col-span-8 glass-surface rounded-3xl p-4 sm:p-5 flex flex-col justify-between gap-3.5 sm:gap-4">
               <div className="flex flex-row items-center justify-between gap-3">
-                <h3 className="text-base font-semibold text-[var(--ft-text-primary)] truncate">
+                <h3 className="text-sm sm:text-base font-semibold text-[var(--ft-text-primary)] truncate">
                   {t(lang, 'فعالیت‌های اخیر', 'Recent Activity')}
                 </h3>
 
@@ -1153,7 +1197,90 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                 </div>
               </div>
 
-              <div className="overflow-x-auto flex-1">
+              {/* Mobile Card View (< sm, capped to 3 by default to prevent excessive mobile scroll) */}
+              <div className="sm:hidden space-y-2 flex-1">
+                {unifiedActivities.length === 0 ? (
+                  <div className="py-6 text-center text-xs text-[var(--ft-text-muted)]">
+                    {t(lang, 'هنوز فعالیتی در این دسته‌بندی ثبت نشده است.', 'No activities recorded in this category.')}
+                  </div>
+                ) : (
+                  <>
+                    {(showAllMobileActivities ? unifiedActivities : unifiedActivities.slice(0, 3)).map((item) => (
+                      <div
+                        key={`mob_${item.kind}_${item.id}`}
+                        onClick={() => {
+                          if (item.rawTrade) onInspectTrade(item.rawTrade);
+                          else onNavigate('finance', 'transactions');
+                        }}
+                        className="p-2.5 rounded-2xl glass-tile hover:bg-[var(--ft-surface-hover)] transition-colors cursor-pointer space-y-1.5"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="p-1.5 rounded-lg bg-[var(--ft-surface-subtle)] border border-[var(--ft-border)] shrink-0">
+                              {item.positive ? (
+                                <ArrowUpRight className="w-3.5 h-3.5 text-[var(--ft-positive)]" />
+                              ) : (
+                                <ArrowDownLeft className="w-3.5 h-3.5 text-[var(--ft-danger)]" />
+                              )}
+                            </span>
+                            <div className="min-w-0">
+                              <div className="text-xs font-semibold text-[var(--ft-text-primary)] truncate">
+                                {item.title}
+                              </div>
+                              <div className="text-[11px] text-[var(--ft-text-muted)] truncate">
+                                {item.subtitle}
+                              </div>
+                            </div>
+                          </div>
+                          <div
+                            className={`text-xs font-num font-bold whitespace-nowrap shrink-0 ${
+                              item.positive ? 'text-[var(--ft-positive)]' : 'text-[var(--ft-text-primary)]'
+                            }`}
+                          >
+                            {item.amountStr}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2 text-[11px] pt-1 border-t border-[var(--ft-border)]">
+                          <div className="flex items-center gap-2 font-num">
+                            <span className="text-[var(--ft-text-muted)]">{item.code}</span>
+                            <span
+                              className={`font-medium ${
+                                item.statusTone === 'positive'
+                                  ? 'text-[var(--ft-positive)]'
+                                  : item.statusTone === 'danger'
+                                  ? 'text-[var(--ft-danger)]'
+                                  : item.statusTone === 'warning'
+                                  ? 'text-[var(--ft-warning)]'
+                                  : 'text-[var(--ft-accent)]'
+                              }`}
+                            >
+                              {item.statusText}
+                            </span>
+                          </div>
+                          <span className="font-num text-[var(--ft-text-muted)]">
+                            {formatJalaliDateTime(item.dateIso, lang)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                    {unifiedActivities.length > 3 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllMobileActivities((v) => !v)}
+                        className="w-full py-2 rounded-xl border border-[var(--ft-border)] hover:bg-[var(--ft-surface-hover)] text-xs font-medium text-[var(--ft-accent)] cursor-pointer"
+                      >
+                        {showAllMobileActivities
+                          ? t(lang, 'نمایش کمتر', 'Show Less')
+                          : t(lang, `مشاهده همه (${unifiedActivities.length})`, `Show All (${unifiedActivities.length})`)}
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* Desktop / Tablet Table View (>= sm) */}
+              <div className="hidden sm:block overflow-x-auto flex-1">
                 <table className="w-full text-xs sm:text-sm">
                   <thead>
                     <tr className="text-xs text-[var(--ft-text-muted)] bg-[var(--ft-surface-subtle)]">
@@ -1248,15 +1375,14 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
           </div>
 
           {/* UPCOMING FINANCIAL OBLIGATIONS AT A GLANCE (Table + Jalali Financial Calendar) */}
-          <section className="glass-surface rounded-3xl p-5 space-y-4">
+          <section className="glass-surface rounded-3xl p-4 sm:p-5 space-y-3.5 sm:space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[var(--ft-border)]">
               <div className="min-w-0">
-                <h3 className="text-base font-semibold text-[var(--ft-text-primary)] flex items-center gap-2">
+                <h3 className="text-sm sm:text-base font-semibold text-[var(--ft-text-primary)] flex items-center gap-2">
                   <Calendar className="w-4 h-4 text-[var(--ft-accent)] shrink-0" />
-                  <span>{t(lang, 'هزینه‌ها و سررسیدهای پیش‌رو', 'Upcoming Expenses & Bills')}</span>
+                  <span>{t(lang, 'سررسیدهای پیش‌رو', 'Upcoming Bills')}</span>
                 </h3>
                 <p className="text-xs text-[var(--ft-text-muted)] font-num mt-0.5">
-                  {t(lang, 'اقساط اعتبارات، وام‌ها و قبوض ماه جاری:', 'Active credit installments, loans & fixed bills:')}{' '}
                   {upcomingObligations.length} {t(lang, 'مورد', 'items')} ·{' '}
                   {formatMoney(
                     upcomingObligations.reduce(
@@ -1271,31 +1397,31 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                 </p>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="inline-flex items-center gap-1 p-0.5 rounded-xl bg-[var(--ft-surface-subtle)] border border-[var(--ft-border)]">
+              <div className="flex flex-wrap items-center gap-2 max-w-full">
+                <div className="inline-flex items-center gap-1 p-1 rounded-2xl bg-[var(--ft-surface-subtle)] border border-[var(--ft-border)] overflow-x-auto no-scrollbar max-w-full flex-nowrap">
                   <button
                     type="button"
                     onClick={() => setObligationsMode('table')}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-lg cursor-pointer flex items-center gap-1.5 ${
+                    className={`min-h-[34px] px-3 py-1.5 text-xs font-medium rounded-xl cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
                       obligationsMode === 'table'
                         ? 'bg-[var(--ft-accent)] text-[var(--ft-accent-fg)]'
                         : 'text-[var(--ft-text-secondary)]'
                     }`}
                   >
                     <Table2 className="w-3.5 h-3.5" />
-                    <span>{t(lang, 'جدول سررسیدها', 'Schedule Table')}</span>
+                    <span>{t(lang, 'جدول', 'Table')}</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setObligationsMode('calendar')}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-lg cursor-pointer flex items-center gap-1.5 ${
+                    className={`min-h-[34px] px-3 py-1.5 text-xs font-medium rounded-xl cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
                       obligationsMode === 'calendar'
                         ? 'bg-[var(--ft-accent)] text-[var(--ft-accent-fg)]'
                         : 'text-[var(--ft-text-secondary)]'
                     }`}
                   >
                     <Calendar className="w-3.5 h-3.5" />
-                    <span>{t(lang, 'تقویم مالی', 'Financial Calendar')}</span>
+                    <span>{t(lang, 'تقویم', 'Calendar')}</span>
                   </button>
                 </div>
 
@@ -1304,46 +1430,29 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                   onClick={() => onNavigate('finance', 'planning')}
                   className="text-xs font-medium text-[var(--ft-accent)] hover:underline cursor-pointer whitespace-nowrap px-2"
                 >
-                  {t(lang, 'مدیریت اعتبارات و اقساط', 'Manage Credits & Bills')}
+                  {t(lang, 'مدیریت اقساط', 'Manage')}
                 </button>
               </div>
             </div>
 
             {obligationsMode === 'table' ? (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs sm:text-sm">
-                  <thead>
-                    <tr className="text-xs text-[var(--ft-text-muted)] bg-[var(--ft-surface-subtle)]">
-                      <th className="py-2.5 px-3 text-start font-medium rounded-s-xl whitespace-nowrap">
-                        {t(lang, 'عنوان تعهد / هزینه', 'Obligation')}
-                      </th>
-                      <th className="py-2.5 px-3 text-start font-medium whitespace-nowrap">
-                        {t(lang, 'نوع / منشاء', 'Origin')}
-                      </th>
-                      <th className="py-2.5 px-3 text-start font-medium whitespace-nowrap">
-                        {t(lang, 'سررسید جلالی', 'Due Date')}
-                      </th>
-                      <th className="py-2.5 px-3 text-start font-medium whitespace-nowrap">
-                        {t(lang, 'مبلغ قسط / هزینه', 'Amount')}
-                      </th>
-                      <th className="py-2.5 px-3 text-end font-medium rounded-e-xl whitespace-nowrap">
-                        {t(lang, 'اقدام', 'Action')}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[var(--ft-border)]">
-                    {upcomingObligations.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="py-8 text-center text-xs text-[var(--ft-text-muted)]">
-                          {t(
-                            lang,
-                            'تبریک! هیچ قسط یا هزینه سررسیدشده‌ای در پیش نیست.',
-                            'All clear — no upcoming financial obligations.'
-                          )}
-                        </td>
-                      </tr>
-                    ) : (
-                      upcomingObligations.slice(0, 8).map((item) => {
+              <>
+                {/* Mobile Cards (< sm, capped to 3 by default to prevent excessive scrolling) */}
+                <div className="sm:hidden space-y-2">
+                  {upcomingObligations.length === 0 ? (
+                    <div className="py-6 text-center text-xs text-[var(--ft-text-muted)]">
+                      {t(
+                        lang,
+                        'تبریک! هیچ قسط یا هزینه سررسیدشده‌ای در پیش نیست.',
+                        'All clear — no upcoming financial obligations.'
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      {(showAllMobileObligations
+                        ? upcomingObligations.slice(0, 8)
+                        : upcomingObligations.slice(0, 3)
+                      ).map((item) => {
                         const kindLabel =
                           item.kind === 'credit_installment'
                             ? t(lang, 'قسط اعتبار', 'BNPL Credit')
@@ -1360,41 +1469,37 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                             : t(lang, `${item.daysLeft} روز دیگر`, `In ${item.daysLeft}d`);
 
                         return (
-                          <tr
-                            key={item.id}
-                            className="hover:bg-[var(--ft-surface-hover)] transition-colors"
-                          >
-                            <td className="py-2.5 px-3">
-                              <div className="font-medium text-[var(--ft-text-primary)] truncate max-w-[220px]">
-                                {item.title}
+                          <div key={`mob_ob_${item.id}`} className="p-3 rounded-2xl glass-tile space-y-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="text-xs font-semibold text-[var(--ft-text-primary)] truncate">
+                                  {item.title}
+                                </div>
+                                <div className="text-[11px] text-[var(--ft-text-muted)] truncate">
+                                  {kindLabel} · {item.subtitle}
+                                </div>
                               </div>
-                              <div className="text-[11px] text-[var(--ft-text-muted)] truncate max-w-[220px]">
-                                {item.subtitle}
+                              <span className="font-num text-xs font-bold text-[var(--ft-text-primary)] whitespace-nowrap shrink-0">
+                                {formatMoney(item.amount, item.currency, lang, false, isPrivate)}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-[var(--ft-border)]">
+                              <div className="font-num text-[11px]">
+                                <span className="text-[var(--ft-text-primary)]">
+                                  {formatJalaliDate(item.dueDateIso, lang)}
+                                </span>{' '}
+                                <span
+                                  className={`font-semibold ${
+                                    item.daysLeft <= 0
+                                      ? 'text-[var(--ft-danger)]'
+                                      : item.daysLeft <= 5
+                                      ? 'text-[var(--ft-warning)]'
+                                      : 'text-[var(--ft-text-muted)]'
+                                  }`}
+                                >
+                                  ({dueText})
+                                </span>
                               </div>
-                            </td>
-                            <td className="py-2.5 px-3 text-xs text-[var(--ft-text-secondary)] whitespace-nowrap">
-                              {kindLabel}
-                            </td>
-                            <td className="py-2.5 px-3 font-num whitespace-nowrap">
-                              <div className="text-xs text-[var(--ft-text-primary)]">
-                                {formatJalaliDate(item.dueDateIso, lang)}
-                              </div>
-                              <div
-                                className={`text-[11px] font-semibold ${
-                                  item.daysLeft <= 0
-                                    ? 'text-[var(--ft-danger)]'
-                                    : item.daysLeft <= 5
-                                    ? 'text-[var(--ft-warning)]'
-                                    : 'text-[var(--ft-text-muted)]'
-                                }`}
-                              >
-                                {dueText}
-                              </div>
-                            </td>
-                            <td className="py-2.5 px-3 font-num font-bold text-[var(--ft-text-primary)] whitespace-nowrap">
-                              {formatMoney(item.amount, item.currency, lang, false, isPrivate)}
-                            </td>
-                            <td className="py-2.5 px-3 text-end whitespace-nowrap">
                               <button
                                 type="button"
                                 onClick={() =>
@@ -1403,20 +1508,144 @@ export const OverviewView: React.FC<OverviewViewProps> = ({
                                     item.kind === 'personal_debt' ? 'people' : 'planning'
                                   )
                                 }
-                                className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-[var(--ft-border-strong)] hover:bg-[var(--ft-accent)] hover:text-[var(--ft-accent-fg)] hover:border-transparent cursor-pointer transition-colors"
+                                className="px-3 py-1 text-xs font-semibold rounded-lg border border-[var(--ft-border-strong)] hover:bg-[var(--ft-accent)] hover:text-[var(--ft-accent-fg)] cursor-pointer transition-colors"
                               >
                                 {item.kind === 'fixed_bill'
                                   ? t(lang, 'مشاهده', 'View')
-                                  : t(lang, 'پرداخت / تسویه', 'Pay')}
+                                  : t(lang, 'پرداخت', 'Pay')}
                               </button>
-                            </td>
-                          </tr>
+                            </div>
+                          </div>
                         );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                      })}
+                      {upcomingObligations.length > 3 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowAllMobileObligations((v) => !v)}
+                          className="w-full py-2 rounded-xl border border-[var(--ft-border)] hover:bg-[var(--ft-surface-hover)] text-xs font-medium text-[var(--ft-accent)] cursor-pointer"
+                        >
+                          {showAllMobileObligations
+                            ? t(lang, 'نمایش کمتر', 'Show Less')
+                            : t(
+                                lang,
+                                `مشاهده همه (${Math.min(8, upcomingObligations.length)})`,
+                                `Show All (${Math.min(8, upcomingObligations.length)})`
+                              )}
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* Desktop Table (>= sm) */}
+                <div className="hidden sm:block overflow-x-auto">
+                  <table className="w-full text-xs sm:text-sm">
+                    <thead>
+                      <tr className="text-xs text-[var(--ft-text-muted)] bg-[var(--ft-surface-subtle)]">
+                        <th className="py-2.5 px-3 text-start font-medium rounded-s-xl whitespace-nowrap">
+                          {t(lang, 'عنوان تعهد / هزینه', 'Obligation')}
+                        </th>
+                        <th className="py-2.5 px-3 text-start font-medium whitespace-nowrap">
+                          {t(lang, 'نوع / منشاء', 'Origin')}
+                        </th>
+                        <th className="py-2.5 px-3 text-start font-medium whitespace-nowrap">
+                          {t(lang, 'سررسید جلالی', 'Due Date')}
+                        </th>
+                        <th className="py-2.5 px-3 text-start font-medium whitespace-nowrap">
+                          {t(lang, 'مبلغ قسط / هزینه', 'Amount')}
+                        </th>
+                        <th className="py-2.5 px-3 text-end font-medium rounded-e-xl whitespace-nowrap">
+                          {t(lang, 'اقدام', 'Action')}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--ft-border)]">
+                      {upcomingObligations.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="py-8 text-center text-xs text-[var(--ft-text-muted)]">
+                            {t(
+                              lang,
+                              'تبریک! هیچ قسط یا هزینه سررسیدشده‌ای در پیش نیست.',
+                              'All clear — no upcoming financial obligations.'
+                            )}
+                          </td>
+                        </tr>
+                      ) : (
+                        upcomingObligations.slice(0, 8).map((item) => {
+                          const kindLabel =
+                            item.kind === 'credit_installment'
+                              ? t(lang, 'قسط اعتبار', 'BNPL Credit')
+                              : item.kind === 'loan_installment'
+                              ? t(lang, 'قسط وام', 'Loan')
+                              : item.kind === 'fixed_bill'
+                              ? t(lang, 'هزینه ثابت', 'Fixed Bill')
+                              : t(lang, 'بدهی شخص', 'Personal Debt');
+                          const dueText =
+                            item.daysLeft < 0
+                              ? t(lang, `${Math.abs(item.daysLeft)} روز عقب‌افتاده`, `${Math.abs(item.daysLeft)}d overdue`)
+                              : item.daysLeft === 0
+                              ? t(lang, 'سررسید امروز', 'Due today')
+                              : t(lang, `${item.daysLeft} روز دیگر`, `In ${item.daysLeft}d`);
+
+                          return (
+                            <tr
+                              key={item.id}
+                              className="hover:bg-[var(--ft-surface-hover)] transition-colors"
+                            >
+                              <td className="py-2.5 px-3">
+                                <div className="font-medium text-[var(--ft-text-primary)] truncate max-w-[220px]">
+                                  {item.title}
+                                </div>
+                                <div className="text-[11px] text-[var(--ft-text-muted)] truncate max-w-[220px]">
+                                  {item.subtitle}
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-3 text-xs text-[var(--ft-text-secondary)] whitespace-nowrap">
+                                {kindLabel}
+                              </td>
+                              <td className="py-2.5 px-3 font-num whitespace-nowrap">
+                                <div className="text-xs text-[var(--ft-text-primary)]">
+                                  {formatJalaliDate(item.dueDateIso, lang)}
+                                </div>
+                                <div
+                                  className={`text-[11px] font-semibold ${
+                                    item.daysLeft <= 0
+                                      ? 'text-[var(--ft-danger)]'
+                                      : item.daysLeft <= 5
+                                      ? 'text-[var(--ft-warning)]'
+                                      : 'text-[var(--ft-text-muted)]'
+                                  }`}
+                                >
+                                  {dueText}
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-3 font-num font-bold text-[var(--ft-text-primary)] whitespace-nowrap">
+                                {formatMoney(item.amount, item.currency, lang, false, isPrivate)}
+                              </td>
+                              <td className="py-2.5 px-3 text-end whitespace-nowrap">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    onNavigate(
+                                      'finance',
+                                      item.kind === 'personal_debt' ? 'people' : 'planning'
+                                    )
+                                  }
+                                  className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-[var(--ft-border-strong)] hover:bg-[var(--ft-accent)] hover:text-[var(--ft-accent-fg)] hover:border-transparent cursor-pointer transition-colors"
+                                >
+                                  {item.kind === 'fixed_bill'
+                                    ? t(lang, 'مشاهده', 'View')
+                                    : t(lang, 'پرداخت / تسویه', 'Pay')}
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             ) : (
               (() => {
                 const monthLen = getJalaliMonthLength(todayJalali.jy, todayJalali.jm);

@@ -883,6 +883,8 @@ export const INITIAL_STATE: FundTrackState = {
     lastSystemError: null,
     readAlertIds: [],
     dismissedAlertIds: [],
+    newsAlertLeadMinutes: 15,
+    newsAlertSoundEnabled: true,
     localAi: {
       enabled: true,
       provider: 'gemini',
